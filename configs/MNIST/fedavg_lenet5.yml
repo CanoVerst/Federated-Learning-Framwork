@@ -15,6 +15,7 @@ clients:
     outbound_processors:
         - unstructured_pruning
         - model_compress
+        - model_processor_test
 
 server:
     address: 127.0.0.1
