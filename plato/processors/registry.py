@@ -33,6 +33,7 @@ if not (hasattr(Config().trainer, 'use_tensorflow')
         model_compress,
         model_decompress,
         model_randomized_response,
+        payload_checker,
         structured_pruning,
         unstructured_pruning,
     )
@@ -56,6 +57,7 @@ if not (hasattr(Config().trainer, 'use_tensorflow')
         ('model_compress', model_compress.Processor),
         ('model_decompress', model_decompress.Processor),
         ('model_randomized_response', model_randomized_response.Processor),
+        ('payload_checker', payload_checker.Processor),
         ('structured_pruning', structured_pruning.Processor),
         ('unstructured_pruning', unstructured_pruning.Processor),
     ])

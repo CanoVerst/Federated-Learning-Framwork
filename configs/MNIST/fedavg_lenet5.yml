@@ -13,9 +13,10 @@ clients:
 
     # Processors for outbound data payloads
     outbound_processors:
-        - unstructured_pruning
-        - model_compress
-        - model_processor_test
+        #- unstructured_pruning
+        #- model_processor_test
+        #- model_compress
+    
 
 server:
     address: 127.0.0.1
@@ -25,7 +26,8 @@ server:
 
     # Processors for inbound data payloads
     inbound_processors:
-        - model_decompress
+        #- model_decompress
+        #- payload_checker
 
 data: !include mnist_iid.yml
 
