@@ -14,7 +14,7 @@ clients:
     # Processors for outbound data payloads
     outbound_processors:
         #- unstructured_pruning
-        #- model_processor_test
+        - model_processor_test
         #- model_compress
     
 
@@ -27,7 +27,7 @@ server:
     # Processors for inbound data payloads
     inbound_processors:
         #- model_decompress
-        #- payload_checker
+        - payload_checker
 
 data: !include mnist_iid.yml
 
