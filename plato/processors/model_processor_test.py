@@ -12,7 +12,7 @@ import tenseal as ts
 
 from plato.config import Config
 from plato.processors import model
-from plato.utils import unary_encoding
+from plato.utils import unary_encoding, homo_enc
 
 
 class Processor(model.Processor):
@@ -24,6 +24,7 @@ class Processor(model.Processor):
         super().__init__(**kwargs)
 
         self.model = None
+        self.context = homo_enc.get_ckks_context()
 
     def process(self, data: Any) -> Any:
 
@@ -37,9 +38,6 @@ class Processor(model.Processor):
             self.client_id)
         
         
-        ckks_text = ts.context(ts.SCHEME_TYPE.CKKS, 8192, coeff_mod_bit_sizes=[60, 40, 40, 60])
-        ckks_text.global_scale = pow(2,40)
-        ckks_text.generate_galois_keys()
 
         print("Start printing info of the model")
         print("Printing the keys")
@@ -66,7 +64,7 @@ class Processor(model.Processor):
         For now, only the first weight tensor is modified.
         """
         output['conv1.weight'] = torch.flatten(output['conv1.weight'])
-        output['conv1.weight'] = ts.ckks_tensor(ckks_text,output['conv1.weight'])
+        output['conv1.weight'] = ts.ckks_tensor(self.context,output['conv1.weight'])
         output['conv1.weight'] = output['conv1.weight'].serialize()
         
         #print("Printing the shape of the first value")

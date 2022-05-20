@@ -5,8 +5,12 @@ Implement a Processor for checking the payload received by the server.
 import logging
 from typing import Any
 import pickle
+import tenseal as ts
+import torch
 
 from plato.processors import model
+from plato.utils import homo_enc
+
 
 class Processor(model.Processor):
     """
@@ -14,10 +18,15 @@ class Processor(model.Processor):
     """
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
+        self.context = homo_enc.get_ckks_context()
 
     def process(self, data: Any) -> Any:
         output = data
         print(type(data))
+        rebuilt_vector = ts.lazy_ckks_tensor_from(output['conv1.weight'])
+        rebuilt_vector.link_context(self.context)
+        rebuilt_tensor = torch.tensor(rebuilt_vector.decrypt().tolist())
+        print(rebuilt_tensor)
         #print(data[str(list(data)[0])])
         return output
 
