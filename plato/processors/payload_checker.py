@@ -17,7 +17,7 @@ class Processor(model.Processor):
 
     def process(self, data: Any) -> Any:
         output = data
-        print(type(data))
+        #print(type(data))
         #print(data[str(list(data)[0])])
         return output
 

@@ -146,7 +146,7 @@ class Client:
     async def payload_to_arrive(self, response) -> None:
         """ Upon receiving a response from the server. """
         self.current_round = response['current_round']
-        print(response)
+        #print(response)
         # Update (virtual) client id for client, trainer and algorithm
         self.client_id = response['id']
 
