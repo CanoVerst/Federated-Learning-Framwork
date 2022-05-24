@@ -13,12 +13,14 @@ from plato.servers import (
     fedavg,
     fedavg_cs,
     mistnet,
+    fedavg_he,
 )
 
 registered_servers = OrderedDict([
     ('fedavg', fedavg.Server),
     ('fedavg_cross_silo', fedavg_cs.Server),
     ('mistnet', mistnet.Server),
+    ('fedavg_homo_enc', fedavg_he.Server),
 ])
 
 
