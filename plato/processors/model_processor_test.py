@@ -40,8 +40,17 @@ class Processor(model.Processor):
         print("Start printing info of the model")
         print("Printing the keys")
         print(output.keys())
-        print("Printing the first key")
-        print(str(list(output)[0]))
+        print(type(output['conv1.weight']))
+        print(type(output['conv1.bias']))
+        #print(output['conv3.weight'])
+        print(output['conv1.weight'].size())
+        print(output['conv2.weight'].size())
+        print(output['conv3.weight'].size())
+        print(output['fc4.weight'].size())
+        print(output['fc5.weight'].size())
+
+
+
         """
         for i in output.keys():
             if 'weight' in i:
@@ -56,14 +65,14 @@ class Processor(model.Processor):
         
         """
         For now, only conv1.weight tensor is modified.
-        """
+        
         #print(output['conv1.weight'])
         #print(output['conv1.weight'].size())
         output['conv1.weight.shape'] = output['conv1.weight'].size()
         output['conv1.weight'] = torch.flatten(output['conv1.weight'])
         output['conv1.weight'] = ts.ckks_tensor(self.context,output['conv1.weight'])
         output['conv1.weight'] = output['conv1.weight'].serialize()
-        
+        """
         
         #print("Printing the shape of the first value")
         #print(str(output['conv1.bias'].shape))
