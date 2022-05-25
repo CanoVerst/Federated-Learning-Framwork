@@ -33,9 +33,9 @@ class Processor(model.Processor):
                 shape = key + ".shape"
                 elements_to_delete.append(shape)
 
-                rebuilt_vector = ts.lazy_ckks_tensor_from(vector_to_build)
+                rebuilt_vector = ts.lazy_ckks_vector_from(vector_to_build)
                 rebuilt_vector.link_context(self.context)
-                rebuilt_tensor = torch.tensor(rebuilt_vector.decrypt().tolist())
+                rebuilt_tensor = torch.tensor(rebuilt_vector.decrypt())
                 rebuilt_tensor = rebuilt_tensor.reshape(output[shape])
                 output[key] = rebuilt_tensor
 

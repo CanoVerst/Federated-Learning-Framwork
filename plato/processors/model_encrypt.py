@@ -6,7 +6,7 @@ from turtle import st
 import numpy as np
 import logging
 from typing import Any
-from rsa import encrypt
+# from rsa import encrypt
 from timeit import default_timer as timer
 
 import torch
@@ -41,17 +41,9 @@ class Processor(model.Processor):
             elements_to_add[shape] = tensor_to_encrypt.size()
 
             encrypted_tensor = torch.flatten(tensor_to_encrypt)
-            print(encrypted_tensor.size())
+            encrypted_tensor = ts.ckks_vector(self.context, encrypted_tensor)
 
-            start_enc = timer()
-            encrypted_tensor = ts.ckks_tensor(self.context, encrypted_tensor)
-            after_enc = timer()
-            print(after_enc-start_enc)
-
-            start_ser = timer()
             encrypted_tensor = encrypted_tensor.serialize()
-            after_ser = timer()
-            print(after_ser-start_ser)
 
             output[tensor_name] = encrypted_tensor
 
