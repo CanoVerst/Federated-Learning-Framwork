@@ -25,6 +25,8 @@ class Processor(model.Processor):
         Only conv1.weight tensor is operated for now.
         """
         output = data
+
+        """
         print(type(data))
         rebuilt_vector = ts.lazy_ckks_tensor_from(output['conv1.weight'])
         rebuilt_vector.link_context(self.context)
@@ -35,6 +37,10 @@ class Processor(model.Processor):
         output['conv1.weight'] = rebuilt_tensor
         output.pop('conv1.weight.shape')
         #print(data[str(list(data)[0])])
+        return output
+        """
+        print(output['conv1.weight'])
+
         return output
 
 

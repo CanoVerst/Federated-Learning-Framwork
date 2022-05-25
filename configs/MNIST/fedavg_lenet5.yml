@@ -28,8 +28,8 @@ server:
     # Processors for inbound data payloads
     inbound_processors:
         #- model_decompress
-        #- payload_checker
         - model_decrypt
+        #- payload_checker
 
 data: !include mnist_iid.yml
 

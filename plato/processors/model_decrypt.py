@@ -2,10 +2,8 @@
 A processor that decrypts model weights tensors.
 """
 
-import logging
 from termios import EXTA
 from typing import Any
-import pickle
 import tenseal as ts
 import torch
 
@@ -20,30 +18,28 @@ class Processor(model.Processor):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.context = homo_enc.get_ckks_context()
+        weight_shapes = {}
+        extract_model = self.trainer.model.cpu().state_dict()
+        for key in extract_model.keys():
+            weight_shapes[key] = extract_model[key].size()
+        self.weight_shapes = weight_shapes
 
     def process(self, data: Any) -> Any:
-        extract_model = self.trainer.model.cpu().state_dict()
         output = data
-        new_key_list = output.keys()
-        elements_to_delete = []
+        key_list = output.keys()
 
-        for key in new_key_list:
-            if ".shape" not in key:
-                vector_to_build = output[key]
-                shape = key + ".shape"
-                elements_to_delete.append(shape)
+        for key in key_list:
+            vector_to_build = output[key]
+            rebuilt_tensor_shape = self.weight_shapes[key]
 
-                rebuilt_vector = ts.lazy_ckks_vector_from(vector_to_build)
-                rebuilt_vector.link_context(self.context)
-                rebuilt_tensor = torch.tensor(rebuilt_vector.decrypt())
-                rebuilt_tensor = rebuilt_tensor.reshape(output[shape])
-                output[key] = rebuilt_tensor
+            rebuilt_vector = ts.lazy_ckks_vector_from(vector_to_build)
+            rebuilt_vector.link_context(self.context)
+            rebuilt_tensor = torch.tensor(rebuilt_vector.decrypt())
+            rebuilt_tensor = rebuilt_tensor.reshape(rebuilt_tensor_shape)
 
-        for key in elements_to_delete:
-            output.pop(key)
+            output[key] = rebuilt_tensor
         
         return output
-        
 
     def _process_layer(self, layer: Any) -> Any:
         """
