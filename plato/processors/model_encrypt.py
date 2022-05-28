@@ -27,6 +27,12 @@ class Processor(model.Processor):
             self.client_id)
 
         key_list = output.keys()
+        para_num = 0
+        for tensor_name in key_list:
+            para_num = para_num + torch.numel(output[tensor_name])
+            #print(para_num)
+        print(para_num)
+
         for tensor_name in key_list:
             tensor_to_encrypt = output[tensor_name]
 
