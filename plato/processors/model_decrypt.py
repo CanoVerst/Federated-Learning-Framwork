@@ -34,11 +34,12 @@ class Processor(model.Processor):
 
             rebuilt_vector = ts.lazy_ckks_vector_from(vector_to_build)
             rebuilt_vector.link_context(self.context)
-            rebuilt_tensor = torch.tensor(rebuilt_vector.decrypt())
-            rebuilt_tensor = rebuilt_tensor.reshape(rebuilt_tensor_shape)
-
-            output[key] = rebuilt_tensor
-        
+            if self.client_id:
+                rebuilt_tensor = torch.tensor(rebuilt_vector.decrypt())
+                rebuilt_tensor = rebuilt_tensor.reshape(rebuilt_tensor_shape)
+                output[key] = rebuilt_tensor
+            else:
+                output[key] = rebuilt_vector
         return output
 
     def _process_layer(self, layer: Any) -> Any:
