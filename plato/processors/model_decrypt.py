@@ -25,21 +25,11 @@ class Processor(model.Processor):
         self.weight_shapes = weight_shapes
 
     def process(self, data: Any) -> Any:
-        output = data
-        key_list = output.keys()
-
-        for key in key_list:
-            vector_to_build = output[key]
-            rebuilt_tensor_shape = self.weight_shapes[key]
-
-            rebuilt_vector = ts.lazy_ckks_vector_from(vector_to_build)
-            rebuilt_vector.link_context(self.context)
-            if self.client_id:
-                rebuilt_tensor = torch.tensor(rebuilt_vector.decrypt())
-                rebuilt_tensor = rebuilt_tensor.reshape(rebuilt_tensor_shape)
-                output[key] = rebuilt_tensor
-            else:
-                output[key] = rebuilt_vector
+        deserialized_weights = homo_enc.deserialize_weights(data, self.context)
+        if self.client_id:
+            output = homo_enc.decrypt_weights(deserialized_weights, self.weight_shapes)
+        else:
+            output = deserialized_weights
         return output
 
     def _process_layer(self, layer: Any) -> Any:
