@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import random
+from typing import OrderedDict
 
 from plato.algorithms import registry as algorithms_registry
 from plato.config import Config
@@ -13,7 +14,7 @@ from plato.datasources import registry as datasources_registry
 from plato.processors import registry as processor_registry
 from plato.servers import base
 from plato.trainers import registry as trainers_registry
-from plato.utils import csv_processor
+from plato.utils import csv_processor, homo_enc
 
 
 class Server(base.Server):
@@ -24,6 +25,10 @@ class Server(base.Server):
 
         self.custom_model = model
         self.model = None
+
+        self.encrypted_model = None
+        self.weight_shapes = {}
+        self.ckks_context = homo_enc.get_ckks_context()
 
         self.custom_algorithm = algorithm
         self.algorithm = None
@@ -130,6 +135,13 @@ class Server(base.Server):
         elif self.algorithm is None and self.custom_algorithm is not None:
             self.algorithm = self.custom_algorithm(trainer=self.trainer)
             self.custom_algorithm = None
+        
+        extract_model = self.trainer.model.cpu().state_dict()
+        for key in extract_model.keys():
+            self.weight_shapes[key] = extract_model[key].size()
+        self.encrypted_model = homo_enc.encrypt_weights(extract_model, False, self.ckks_context)
+            
+
 
     async def select_clients(self, for_next_batch=False):
         await super().select_clients(for_next_batch=for_next_batch)
@@ -137,13 +149,16 @@ class Server(base.Server):
     def extract_client_updates(self, updates):
         """Extract the model weight updates from client updates."""
         weights_received = [payload for (__, __, payload, __) in updates]
-        return self.algorithm.compute_weight_updates(weights_received)
+        return weights_received
 
     async def aggregate_weights(self, updates):
         """Aggregate the reported weight updates from the selected clients."""
-        update = await self.federated_averaging(updates)
-        updated_weights = self.algorithm.update_weights(update)
-        self.algorithm.load_weights(updated_weights)
+        self.encrypted_model = await self.federated_averaging(updates)
+
+        # Decrypt model weights for test accuracy
+        decrypted_weights = homo_enc.decrypt_weights(self.encrypted_model, 
+                                                     self.weight_shapes)
+        self.algorithm.load_weights(decrypted_weights)
 
     async def federated_averaging(self, updates):
         """Aggregate weight updates from the clients using federated averaging."""
@@ -155,7 +170,7 @@ class Server(base.Server):
 
         # Perform weighted averaging
         avg_update = {
-            name: self.trainer.zeros(weights.shape)
+            name: self.trainer.zeros(weights.size())
             for name, weights in weights_received[0].items()
         }
 
@@ -247,4 +262,8 @@ class Server(base.Server):
 
     def customize_server_payload(self, payload):
         """ Customize the server payload before sending to the client. """
-        return payload
+        serialized_data = {
+                name: weights.serialize()
+                for name, weights in self.encrypted_model.items()
+            }
+        return serialized_data
