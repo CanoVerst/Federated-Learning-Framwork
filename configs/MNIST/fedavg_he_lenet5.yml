@@ -1,0 +1,78 @@
+clients:
+    # Type
+    type: simple
+
+    # The total number of clients
+    total_clients: 10
+
+    # The number of clients selected in each round
+    per_round: 2
+
+    # Should the clients compute test accuracy locally?
+    do_test: false
+
+    # Processors for outbound data payloads
+    outbound_processors:
+        # Encrypt and serialize the model before sending to the server
+        - model_encrypt
+        - model_compress
+
+    inbound_processors:
+        # Deserialize and decrypt the model before local training
+        - model_decompress
+        - model_decrypt
+    
+
+server:
+    address: 127.0.0.1
+    port: 8000
+    random_seed: 1
+    simulate_wall_time: true
+
+    type: fedavg_homo_enc
+    # Processors for inbound data payloads
+    inbound_processors:
+        # Server needs to deserialize the payload to obtain encrypted data
+        - model_decompress
+        - model_decrypt
+      
+    outbound_processors:
+        # Encrypt and serialize the model before sending to the server
+        - model_compress
+
+    
+data: !include mnist_iid.yml
+
+trainer:
+    # The type of the trainer
+    type: basic
+
+    # The maximum number of training rounds
+    rounds: 5
+
+    # Whether to apply differential privacy
+    # differential_privacy: true
+    # dp_epsilon: 1
+    # dp_delta: 0.00001
+    # dp_max_grad_norm: 1
+
+    # The maximum number of clients running concurrently
+    max_concurrency: 1
+
+    # The target accuracy
+    target_accuracy: 0.99
+
+    # The machine learning model
+    model_name: lenet5
+
+    # Number of epoches for local training in each communication round
+    epochs: 1
+    batch_size: 32
+    optimizer: SGD
+    learning_rate: 0.01
+    momentum: 0.9
+    weight_decay: 0.0
+
+algorithm:
+    # Aggregation algorithm
+    type: fedavg
