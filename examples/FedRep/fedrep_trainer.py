@@ -16,9 +16,6 @@ import time
 import logging
 
 import torch
-import numpy as np
-
-from opacus.privacy_engine import PrivacyEngine
 
 from plato.config import Config
 from plato.trainers import basic
@@ -59,14 +56,17 @@ class Trainer(basic.Trainer):
                      self.head_param_names)
 
     def train_model(self, config, trainset, sampler, cut_layer=None):
-        """The main training loop of FedRep in a federated learning workload.
+        """
+        The main training loop of FedRep in a federated learning workload.
 
-            The local training stage contains two parts:
-                - Head optimization:
-                Makes τ local gradient-based updates to solve for its optimal head given
-                the current global representation communicated by the server.
-                - Representation optimization:
-                Takes one local gradient-based update with respect to the current representation
+        The local training stage contains two parts:
+
+        - Head optimization:
+            Makes τ local gradient-based updates to solve for its optimal head given
+            the current global representation communicated by the server.
+
+        - Representation optimization:
+            Takes one local gradient-based update with respect to the current representation.
         """
         batch_size = config['batch_size']
         log_interval = 10
@@ -84,16 +84,11 @@ class Trainer(basic.Trainer):
                                                        batch_size=batch_size,
                                                        sampler=sampler)
 
-        iterations_per_epoch = np.ceil(len(trainset) / batch_size).astype(int)
-        # load the total local update epochs
         epochs = config['epochs']
+
         # load the local update epochs for head optimization
         head_epochs = config[
             'head_epochs'] if 'head_epochs' in config else epochs - 1
-
-        # Sending the model to the device used for training
-        self.model.to(self.device)
-        self.model.train()
 
         # Initializing the loss criterion
         _loss_criterion = getattr(self, "loss_criterion", None)
@@ -108,26 +103,27 @@ class Trainer(basic.Trainer):
         optimizer = get_optimizer(self.model)
 
         # Initializing the learning rate schedule, if necessary
-        if hasattr(config, 'lr_schedule'):
+        if 'lr_schedule' in config:
             lr_schedule = optimizers.get_lr_schedule(optimizer,
-                                                     iterations_per_epoch,
+                                                     len(train_loader),
                                                      train_loader)
         else:
             lr_schedule = None
 
-        for epoch in range(1, epochs + 1):
+        self.model.to(self.device)
+        self.model.train()
 
-            # As presented in the Section 3 of the FedRep paper,
-            #   the head is optimized for (epochs - 1) while frozing
-            #   the representation
+        for epoch in range(1, epochs + 1):
+            # As presented in Section 3 of the FedRep paper, the head is optimized
+            # for (epochs - 1) while freezing the representation.
             if epoch <= head_epochs:
                 for name, param in self.model.named_parameters():
                     if name in self.representation_param_names:
                         param.requires_grad = False
                     else:
                         param.requires_grad = True
-            # Then, the representation will be optimized for only one
-            #   epoch.
+
+            # The representation will then be optimized for only one epoch
             if epoch > head_epochs:
                 for name, param in self.model.named_parameters():
                     if name in self.representation_param_names:

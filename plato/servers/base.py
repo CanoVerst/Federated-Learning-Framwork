@@ -98,6 +98,18 @@ class Server:
         # Accumulated communication overhead (MB) throughout the FL training session
         self.comm_overhead = 0
 
+        # Downlink and uplink bandwidth (MBps)
+        # for computing communication time in communication simulation mode
+        self.downlink_bandwidth = Config(
+        ).server.downlink_bandwidth if hasattr(Config().server,
+                                               'downlink_bandwidth') else 1
+        self.uplink_bandwidth = Config().server.uplink_bandwidth if hasattr(
+            Config().server, 'uplink_bandwidth') else 1
+
+        # Use dictionaries to record downlink/uplink communication time of each client
+        self.downlink_comm_time = {}
+        self.uplink_comm_time = {}
+
         # States that need to be maintained for asynchronous FL
 
         # sids that are currently in use
@@ -387,7 +399,7 @@ class Server:
                 # reported may not have been aggregated; they should be excluded from the next
                 # round of client selection
                 reporting_client_ids = [
-                    client[1]['client_id'] for client in self.reported_clients
+                    client[2]['client_id'] for client in self.reported_clients
                 ]
 
                 selectable_clients = [
@@ -520,6 +532,12 @@ class Server:
                         self, payload_size, self.selected_client_id)
 
                     self.comm_overhead += payload_size
+
+                    # Compute the communication time to transfer the current global model to client
+                    self.downlink_comm_time[
+                        self.selected_client_id] = payload_size / (
+                            self.downlink_bandwidth /
+                            len(self.selected_clients))
 
                 server_response = await self.customize_server_response(
                     server_response)
@@ -662,6 +680,9 @@ class Server:
 
             self.comm_overhead += payload_size
 
+            self.uplink_comm_time[
+                client_id] = payload_size / self.uplink_bandwidth
+
             await self.process_client_info(client_id, sid)
 
     async def client_chunk_arrived(self, sid, data) -> None:
@@ -716,7 +737,12 @@ class Server:
             self.client_payload[sid])
 
         if self.comm_simulation:
-            self.reports[sid].comm_time = 0
+            if hasattr(Config().clients, 'compute_comm_time') and Config(
+            ).clients.compute_comm_time:
+                self.reports[sid].comm_time = self.downlink_comm_time[
+                    client_id] + self.uplink_comm_time[client_id]
+            else:
+                self.reports[sid].comm_time = 0
         else:
             self.reports[sid].comm_time = time.time(
             ) - self.reports[sid].comm_time
@@ -731,6 +757,8 @@ class Server:
 
         client_info = (
             finish_time,  # sorted by the client's finish time
+            random.random(
+            ),  # in case two or more clients have the same finish time
             {
                 'client_id': client_id,
                 'sid': sid,
@@ -741,11 +769,11 @@ class Server:
             })
 
         heapq.heappush(self.reported_clients, client_info)
-        self.current_reported_clients[client_info[1]['client_id']] = True
+        self.current_reported_clients[client_info[2]['client_id']] = True
         del self.training_clients[client_id]
 
         if self.asynchronous_mode and self.simulate_wall_time:
-            self.training_sids.remove(client_info[1]['sid'])
+            self.training_sids.remove(client_info[2]['sid'])
 
         await self.process_clients(client_info)
 
@@ -773,7 +801,7 @@ class Server:
 
                 request_sent = False
                 for i, client_info in enumerate(self.reported_clients):
-                    client = client_info[1]
+                    client = client_info[2]
                     client_staleness = self.current_round - client[
                         'starting_round']
 
@@ -819,7 +847,7 @@ class Server:
                         self.minimum_clients)):
                 # Extract a client with the earliest finish time in wall clock time
                 client_info = heapq.heappop(self.reported_clients)
-                client = client_info[1]
+                client = client_info[2]
 
                 # Removing from the list of current reporting clients as well, if needed
                 self.current_processed_clients[client['client_id']] = True
@@ -852,14 +880,14 @@ class Server:
                 client_info = heapq.heappop(self.reported_clients)
                 heapq.heappush(possibly_stale_clients, client_info)
 
-                if client_info[1][
+                if client_info[2][
                         'starting_round'] < self.current_round - self.staleness_bound:
                     for __ in range(0, len(possibly_stale_clients)):
                         stale_client_info = heapq.heappop(
                             possibly_stale_clients)
                         # Update the simulated wall clock time to be the finish time of this client
                         self.wall_time = stale_client_info[0]
-                        client = stale_client_info[1]
+                        client = stale_client_info[2]
 
                         # Add the report and payload of the extracted reporting client into updates
                         logging.info(
@@ -885,7 +913,7 @@ class Server:
             # In both synchronous and asynchronous modes, if we are not simulating the wall clock
             # time, we need to add the client report to the list of updates so far;
             # the same applies when we are running in synchronous mode.
-            client = client_info[1]
+            client = client_info[2]
             client_staleness = self.current_round - client['starting_round']
 
             self.updates.append((client['client_id'], client['report'],
