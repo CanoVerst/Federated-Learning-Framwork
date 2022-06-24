@@ -13,13 +13,8 @@ clients:
 
     # Processors for outbound data payloads
     outbound_processors:
-        # Encrypt and serialize the model before sending to the server
-        - model_encrypt
-
-    inbound_processors:
-        # Deserialize and decrypt the model before local training
-        - model_decrypt
-    
+        - unstructured_pruning
+        - model_compress
 
 server:
     address: 127.0.0.1
@@ -27,11 +22,9 @@ server:
     random_seed: 1
     simulate_wall_time: true
 
-    type: fedavg_homo_enc
     # Processors for inbound data payloads
     inbound_processors:
-        # Server needs to deserialize the payload to obtain encrypted data
-        - model_decrypt
+        - model_decompress
 
 data: !include mnist_iid.yml
 
@@ -46,7 +39,7 @@ trainer:
     max_concurrency: 1
 
     # The target accuracy
-    target_accuracy: 0.99
+    target_accuracy: 0.97
 
     # The machine learning model
     model_name: lenet5
