@@ -3,6 +3,8 @@ A simple federated learning server using federated averaging.
 """
 
 import asyncio
+from typing import OrderedDict
+import torch
 
 from plato.servers import fedavg
 from plato.utils import homo_enc
@@ -15,6 +17,7 @@ class Server(fedavg.Server):
         super().__init__(model=model, algorithm=algorithm, trainer=trainer)
         self.encrypted_model = None
         self.weight_shapes = {}
+        self.para_nums = {}
         self.ckks_context = homo_enc.get_ckks_context()
 
     def load_trainer(self):
@@ -24,7 +27,11 @@ class Server(fedavg.Server):
         extract_model = self.trainer.model.cpu().state_dict()
         for key in extract_model.keys():
             self.weight_shapes[key] = extract_model[key].size()
-        self.encrypted_model = homo_enc.encrypt_weights(extract_model, False, self.ckks_context)
+            self.para_nums[key] = torch.numel(extract_model[key])
+        
+        self.encrypted_model = homo_enc.encrypt_weights(extract_model, False,
+                                                        self.ckks_context, self.para_nums,
+                                                        encrypt_ratio = 0.05)
             
 
     async def aggregate_weights(self, updates):
@@ -33,7 +40,7 @@ class Server(fedavg.Server):
 
         # Decrypt model weights for test accuracy
         decrypted_weights = homo_enc.decrypt_weights(self.encrypted_model, 
-                                                     self.weight_shapes)
+                                                     self.weight_shapes, self.para_nums)
         self.algorithm.load_weights(decrypted_weights)
 
     async def federated_averaging_he(self, updates):
@@ -65,8 +72,11 @@ class Server(fedavg.Server):
 
     def customize_server_payload(self, payload):
         """ Customize the server payload before sending to the client. """
-        serialized_data = {
-                name: weights.serialize()
-                for name, weights in self.encrypted_model.items()
-            }
+        serialized_data = OrderedDict()
+        for name,value in self.encrypted_model.items():
+            if name == 'encrypted_weights':
+                serialized_data[name] = value.serialize()
+            else:
+                serialized_data[name] = value
+        
         return serialized_data
