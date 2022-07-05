@@ -20,18 +20,18 @@ class Server(fedavg.Server):
         self.para_nums = {}
         self.ckks_context = homo_enc.get_ckks_context()
 
-    def load_trainer(self):
+    def init_trainer(self):
         """Setting up the global model to be trained via federated learning."""
-        super().load_trainer()
+        super().init_trainer()
         
         extract_model = self.trainer.model.cpu().state_dict()
         for key in extract_model.keys():
             self.weight_shapes[key] = extract_model[key].size()
             self.para_nums[key] = torch.numel(extract_model[key])
         
-        self.encrypted_model = homo_enc.encrypt_weights(extract_model, False,
+        self.encrypted_model = homo_enc.encrypt_weights(extract_model, True,
                                                         self.ckks_context, self.para_nums,
-                                                        encrypt_ratio = 0.05)
+                                                        encrypt_ratio = 0)
             
 
     async def aggregate_weights(self, updates):
@@ -71,12 +71,5 @@ class Server(fedavg.Server):
         return avg_update
 
     def customize_server_payload(self, payload):
-        """ Customize the server payload before sending to the client. """
-        serialized_data = OrderedDict()
-        for name,value in self.encrypted_model.items():
-            if name == 'encrypted_weights':
-                serialized_data[name] = value.serialize()
-            else:
-                serialized_data[name] = value
-        
-        return serialized_data
+        """ Customize the server payload before sending to the client. """        
+        return self.encrypted_model
