@@ -26,13 +26,15 @@ else:
         basic,
         diff_privacy,
         pascal_voc,
-        gan
+        gan,
+        basic_g
     )
     registered_trainers = OrderedDict([
         ('basic', basic.Trainer),
         ('diff_privacy', diff_privacy.Trainer),
         ('pascal_voc', pascal_voc.Trainer),
         ('gan', gan.Trainer),
+        ('basic_gradient', basic_g.Trainer),
     ])
 
 
