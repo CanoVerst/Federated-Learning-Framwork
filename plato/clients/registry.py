@@ -10,6 +10,7 @@ from collections import OrderedDict
 from plato.clients import (
     simple,
     mistnet,
+    simple_he,
 )
 
 from plato.config import Config
@@ -17,6 +18,7 @@ from plato.config import Config
 registered_clients = OrderedDict([
     ('simple', simple.Client),
     ('mistnet', mistnet.Client),
+    ('simple_he', simple_he.Client),
 ])
 
 
