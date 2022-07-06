@@ -1,5 +1,6 @@
 """The YOLOV5 model for PyTorch."""
 import logging
+import os
 from pathlib import Path
 from typing import OrderedDict
 
@@ -21,6 +22,38 @@ class Trainer(basic.Trainer):
         super().__init__(model = model)
         self.gradient = OrderedDict()
 
+    def save_gradient(self, filename=None, location=None):
+        """Saving the model to a file."""
+        model_path = Config(
+        ).params['model_path'] if location is None else location
+        model_name = Config().trainer.model_name
+
+        try:
+            if not os.path.exists(model_path):
+                os.makedirs(model_path)
+        except FileExistsError:
+            pass
+
+        if filename is not None:
+            model_path = f'{model_path}/{filename}'
+        else:
+            model_path = f'{model_path}/{model_name}.pth'
+
+        torch.save(self.gradient, model_path)
+
+    def load_gradient(self, filename=None, location=None):
+        """Load gradients from a file."""
+        model_path = Config(
+        ).params['model_path'] if location is None else location
+        model_name = Config().trainer.model_name
+
+        if filename is not None:
+            model_path = f'{model_path}/{filename}'
+        else:
+            model_path = f'{model_path}/{model_name}.pth'
+
+        self.gradient = torch.load(model_path)
+
     def train_model(self, config, trainset, sampler, cut_layer=None):
         '''Compute gradients after training'''
         self.train_loop(config, trainset, sampler, cut_layer)
@@ -38,5 +71,15 @@ class Trainer(basic.Trainer):
         loss.backward()
         for name, param in list(self.model.named_parameters()):
             self.gradient[name] = param.grad
-        
-        print(123)
+
+        model_type = config['model_name']
+        filename = f"{model_type}_gradient_{self.client_id}_{config['run_id']}.pth"
+        self.save_gradient(filename)
+
+
+    def load_model(self, filename=None, location=None):
+        super().load_model(filename, location)
+        model_type = Config().trainer.model_name
+        run_id = Config().params["run_id"]
+        filename = f"{model_type}_gradient_{self.client_id}_{run_id}.pth"
+        self.load_gradient(filename)
