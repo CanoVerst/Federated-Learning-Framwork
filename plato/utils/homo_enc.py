@@ -33,7 +33,7 @@ def get_ckks_context():
 
         return context
 
-def encrypt_weights(plain_weights, serialize = True, context = None, para_nums = None, encrypt_ratio = 0.05):
+def encrypt_weights(plain_weights, serialize = True, context = None, para_nums = None, encrypt_ratio = 0.05, enc_mask = None):
     if context == None:
         context = get_ckks_context()
     
@@ -44,10 +44,13 @@ def encrypt_weights(plain_weights, serialize = True, context = None, para_nums =
 
     # Create a list of indices with length of sample_size which is computed based on
     # the number of parameters of the model and the encrypt_ratio
-    for value in para_nums.values():
-        total_para_num += value
-    sample_size = int(total_para_num*encrypt_ratio)
-    encrypt_indices = random.sample(range(0,total_para_num), sample_size)
+    if enc_mask is None:
+        for value in para_nums.values():
+            total_para_num += value
+        sample_size = int(total_para_num*encrypt_ratio)
+        encrypt_indices = random.sample(range(0,total_para_num), sample_size)
+    else:
+        encrypt_indices = enc_mask.long()
 
     # Flatten all weight tensors to a vector
     flattened_weight_arr = np.array([])

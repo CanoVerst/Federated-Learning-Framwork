@@ -23,6 +23,8 @@ class Processor(model.Processor):
             para_nums[key] = torch.numel(extract_model[key])
         self.para_nums = para_nums
 
+        self.encrypt_mask = None
+
     def process(self, data: Any) -> Any:
         logging.info(
             "[Client #%d] Applying a processor that encrypts the model.",
@@ -31,7 +33,8 @@ class Processor(model.Processor):
                                     serialize = True,
                                     context = self.context,
                                     para_nums = self.para_nums,
-                                    encrypt_ratio = 0.05)
+                                    encrypt_ratio = 0.05,
+                                    enc_mask = self.encrypt_mask)
         return encrypted_weights
 
     def _process_layer(self, layer: torch.Tensor) -> torch.Tensor:
