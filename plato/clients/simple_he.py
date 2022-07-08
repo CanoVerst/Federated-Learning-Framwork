@@ -100,7 +100,8 @@ class Client(simple.Client):
 
         else:
             mask = self.server_payload
-            client_id, report, payload = self.model_buffer.pop()
+            client_id, report, payload = self.model_buffer.pop(0)
+            assert client_id == response['id']
             await self.sio.emit('client_report', {
             'id': response['id'],
             'report': pickle.dumps(report)

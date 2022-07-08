@@ -21,6 +21,7 @@ class Server(fedavg.Server):
         self.ckks_context = homo_enc.get_ckks_context()
 
         self.final_mask = None
+        self.last_selected_clients = []
 
 
     def init_trainer(self):
@@ -101,3 +102,10 @@ class Server(fedavg.Server):
             return self.encrypted_model
         else:
             return self.final_mask
+
+    def choose_clients(self, clients_pool, clients_count):
+        if self.current_round % 2 != 0:
+            self.last_selected_clients = super().choose_clients(clients_pool, clients_count)
+            return self.last_selected_clients
+        else:
+            return self.last_selected_clients
