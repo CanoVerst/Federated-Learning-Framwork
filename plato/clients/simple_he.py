@@ -19,7 +19,7 @@ from plato.processors import registry as processor_registry
 from plato.processors.model_encrypt import Processor as encrpt_processor
 from plato.samplers import registry as samplers_registry
 from plato.trainers import registry as trainers_registry
-from plato.utils import fonts
+from plato.utils import fonts, homo_enc
 
 class Client(simple.Client):
     """A basic federated learning client who sends simple weight updates."""
@@ -34,20 +34,22 @@ class Client(simple.Client):
         self.model_buffer = []
     
     def get_exposed_weights(self):
-        # Read exposed weights from file
-        # Return original model weights as a place holder
-        return self.algorithm.extract_weights()
+        model_name = Config().trainer.model_name
+        run_id = Config().params["run_id"]
+        checkpoint_path = Config().params['checkpoint_path']
 
-    def compute_mask(self, exposed_weights, latest_weights, gradients):
+        est_filename = f"{checkpoint_path}/{model_name}_est_{run_id}_{self.client_id}.pth"
+        return homo_enc.get_est(est_filename)
+
+    def compute_mask(self, latest_weights, gradients):
         mask_ratio = 0.05
-        exposed_flat = torch.cat([torch.flatten(exposed_weights[name]) for _, name 
-                                    in enumerate(exposed_weights)]) 
+        exposed_flat = self.get_exposed_weights()
         latest_flat = torch.cat([torch.flatten(latest_weights[name]) for _, name 
                                     in enumerate(latest_weights)]) 
         grad_flat = torch.cat([torch.flatten(gradients[name]) for _, name 
                                     in enumerate(gradients)]) 
         
-        delta = exposed_flat - latest_flat + torch.randn(len(latest_flat))
+        delta = exposed_flat - latest_flat
         product = delta * grad_flat
         
         sorted_product, indices = torch.sort(product, descending = True)
@@ -92,8 +94,7 @@ class Client(simple.Client):
                 self.load_data()
             await self.start_training()
 
-            mask_proposal = self.compute_mask(self.get_exposed_weights(), 
-                                              self.algorithm.extract_weights(),
+            mask_proposal = self.compute_mask(self.algorithm.extract_weights(),
                                               self.trainer.gradient)
             # Send mask_proposal to server
             await self.send(mask_proposal, process = False)
@@ -102,7 +103,7 @@ class Client(simple.Client):
             mask = self.server_payload
             client_id, report, payload = self.model_buffer.pop(0)
             assert client_id == response['id']
-            
+
             # No training happens in this round.
             report.training_time = 0
             await self.sio.emit('client_report', {
@@ -113,9 +114,6 @@ class Client(simple.Client):
                 if isinstance(processor, encrpt_processor):
                     processor.encrypt_mask = mask
             await self.send(payload, process = True)
-            
-    
-    
 
     async def start_training(self):
         """ Overwrite training function. """
