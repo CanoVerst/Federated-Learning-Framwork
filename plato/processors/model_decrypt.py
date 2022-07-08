@@ -9,6 +9,7 @@ import torch
 
 from plato.processors import model
 from plato.utils import homo_enc
+from plato.config import Config
 
 class Processor(model.Processor):
     """
@@ -29,6 +30,7 @@ class Processor(model.Processor):
         self.para_nums = para_nums
 
     def process(self, data: Any) -> Any:
+        homo_enc.update_est(Config(), self.client_id, data)
         deserialized_weights = homo_enc.deserialize_weights(data, self.context)
         if self.client_id:
             output = homo_enc.decrypt_weights(deserialized_weights, self.weight_shapes, self.para_nums)

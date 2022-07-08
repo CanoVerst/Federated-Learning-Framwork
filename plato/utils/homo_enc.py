@@ -1,7 +1,9 @@
 """
 Utility functions for homomorphic encryption.
 """
+
 import os
+import pickle
 import torch
 import tenseal as ts
 import numpy as np
@@ -128,3 +130,28 @@ def decrypt_weights(encrypted_weights, weight_shapes = None, para_nums = None):
         weight_index = weight_index + 1
 
     return decrypted_weights
+
+def update_est(config, client_id, data):
+
+    unencrypted_weights = data["unencrypted_weights"]
+    encrypted_indices = data["encrypt_indices"]
+    
+    model_name = config.trainer.model_name
+    run_id = config.params["run_id"]
+    checkpoint_path = config.params['checkpoint_path']
+
+    est_filename = f"{checkpoint_path}/{model_name}_est_{run_id}_{client_id}.pth"
+    old_est = get_est(est_filename)
+    new_est = unencrypted_weights.clone().detach()
+    if not old_est is None:
+        new_est[encrypted_indices] = old_est[encrypted_indices]
+
+    with open(est_filename, 'wb') as est_file:
+        pickle.dump(new_est, est_file)
+
+def get_est(filename):
+    try:
+        with open(filename, 'rb') as est_file:
+            return pickle.load(est_file)
+    except:
+        return None

@@ -8,6 +8,7 @@ from typing import Any
 
 import torch
 import tenseal as ts
+from plato.config import Config
 
 from plato.processors import model
 from plato.utils import homo_enc
@@ -35,6 +36,7 @@ class Processor(model.Processor):
                                     para_nums = self.para_nums,
                                     encrypt_ratio = 0.05,
                                     enc_mask = self.encrypt_mask)
+        homo_enc.update_est(Config(), self.client_id, encrypted_weights)
         return encrypted_weights
 
     def _process_layer(self, layer: torch.Tensor) -> torch.Tensor:
