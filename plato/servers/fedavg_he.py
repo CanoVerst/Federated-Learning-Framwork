@@ -109,3 +109,11 @@ class Server(fedavg.Server):
             return self.last_selected_clients
         else:
             return self.last_selected_clients
+    
+    async def process_reports(self):
+        if self.current_round % 2 != 0:
+            await super().process_reports()
+        else:
+            await self.aggregate_weights(self.updates)
+
+        
