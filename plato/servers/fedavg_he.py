@@ -48,7 +48,7 @@ class Server(fedavg.Server):
         _, indices = interleaved_indices.unique(sorted=False, return_inverse = True)
         
         self.final_mask = interleaved_indices[indices.unique()[:mask_size]].clone().detach()
-        self.final_mask = self.final_mask.int()
+        self.final_mask = self.final_mask.int().long()
 
     async def aggregate_weights(self, updates):
         """Aggregate the reported weight updates from the selected clients."""
