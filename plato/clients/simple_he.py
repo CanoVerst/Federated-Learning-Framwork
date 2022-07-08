@@ -102,8 +102,11 @@ class Client(simple.Client):
             mask = self.server_payload
             client_id, report, payload = self.model_buffer.pop(0)
             assert client_id == response['id']
+            
+            # No training happens in this round.
+            report.training_time = 0
             await self.sio.emit('client_report', {
-            'id': response['id'],
+            'id': client_id,
             'report': pickle.dumps(report)
             })
             for processor in self.outbound_processor.processors:
