@@ -334,11 +334,15 @@ def export_target_model(model_name, num_classes):
     len_list = len_from_shape(shapes_dict)
     est_model = torch.split(est_model, len_list)
     weight_index = 0
-    rebuilt_model = OrderedDict()
+    rebuilt_statedict = OrderedDict()
 
     for name, shape in shapes_dict.items():
-        rebuilt_model[name] = est_model[weight_index].reshape(shape)
+        rebuilt_statedict[name] = est_model[weight_index].reshape(shape)
         weight_index = weight_index + 1
+    print(rebuilt_statedict['linear.bias'])
+    
+    rebuilt_model = get_model_ins(model_name, num_classes)
+    rebuilt_model.load_state_dict(rebuilt_statedict)
 
     return rebuilt_model
 
@@ -346,7 +350,9 @@ def export_target_model(model_name, num_classes):
 exported_model = export_target_model('resnet_18', 100)
 
 """
-print(rebuilt_model.keys())
-for value in rebuilt_model.values():
+print(type(exported_model))
+print(exported_model.cpu().state_dict()['linear.bias'])
+print(rebuilt_statedict.keys())
+for value in rebuilt_statedict.values():
     print(value.size())
 """
