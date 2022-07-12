@@ -69,8 +69,14 @@ class Trainer(basic.Trainer):
         loss_criterion = torch.nn.CrossEntropyLoss()
         loss = loss_criterion(outputs, labels)
         loss.backward()
-        for name, param in list(self.model.named_parameters()):
-            self.gradient[name] = param.grad
+
+        param_dict = dict(list(self.model.named_parameters()))
+        state_dict = self.model.state_dict()
+        for name in state_dict.keys():
+            if name in param_dict:
+                self.gradient[name] = param_dict[name].grad
+            else:
+                self.gradient[name] = torch.zeros(state_dict[name].shape)
 
         model_type = config['model_name']
         filename = f"{model_type}_gradient_{self.client_id}_{config['run_id']}.pth"
