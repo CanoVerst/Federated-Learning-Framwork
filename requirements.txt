@@ -12,3 +12,4 @@ zstd
 torch-optimizer
 tenseal
 scikit-learn
+xgboost
