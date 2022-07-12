@@ -31,30 +31,35 @@ class Client(simple.Client):
                  trainer=None):
         super().__init__(model = model, datasource = datasource, algorithm = algorithm, trainer = trainer)
 
+        self.encrypt_ratio = Config().clients.encrypt_ratio
+        self.attack_prep_dir = f"{Config().data.datasource}_{Config().trainer.model_name}_{self.encrypt_ratio}"
+        self.checkpoint_path = Config().params['checkpoint_path']
         self.model_buffer = []
     
     def get_exposed_weights(self):
         model_name = Config().trainer.model_name
-        run_id = Config().params["run_id"]
-        checkpoint_path = Config().params['checkpoint_path']
-
-        est_filename = f"{checkpoint_path}/{model_name}_est_{run_id}_{self.client_id}.pth"
+        
+        est_filename = f"{self.checkpoint_path}/{self.attack_prep_dir}/{model_name}_est_{self.client_id}.pth"
         return homo_enc.get_est(est_filename)
 
     def compute_mask(self, latest_weights, gradients):
-        mask_ratio = 0.05
         exposed_flat = self.get_exposed_weights()
         latest_flat = torch.cat([torch.flatten(latest_weights[name]) for _, name 
                                     in enumerate(latest_weights)]) 
         grad_flat = torch.cat([torch.flatten(gradients[name]) for _, name 
                                     in enumerate(gradients)]) 
         
+        # Store the plain model weights
+        plain_filename = f"{self.checkpoint_path}/{self.attack_prep_dir}/{Config().trainer.model_name}_plain_{self.client_id}.pth"
+        with open(plain_filename, 'wb') as plain_file:
+            pickle.dump(latest_flat, plain_file)
+
         delta = exposed_flat - latest_flat
         product = delta * grad_flat
         
-        sorted_product, indices = torch.sort(product, descending = True)
+        _, indices = torch.sort(product, descending = True)
         positive_number = torch.sum(product > 0)
-        mask_len = int(mask_ratio * len(indices))
+        mask_len = int(self.encrypt_ratio * len(indices))
     
         return indices[:min(positive_number, mask_len)].clone().detach()
 

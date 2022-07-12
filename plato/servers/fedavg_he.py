@@ -3,8 +3,11 @@ A simple federated learning server using federated averaging.
 """
 
 import asyncio
+import os
+import pickle
 from typing import OrderedDict
 import torch
+from plato.config import Config
 
 from plato.servers import fedavg
 from plato.utils import homo_enc
@@ -23,6 +26,12 @@ class Server(fedavg.Server):
         self.final_mask = None
         self.last_selected_clients = []
 
+        self.checkpoint_path = Config().params['checkpoint_path']
+        self.attack_prep_dir =  f"{Config().data.datasource}_{Config().trainer.model_name}_{Config().clients.encrypt_ratio}"
+        if not os.path.exists(f"{self.checkpoint_path}/{self.attack_prep_dir}/"):
+            os.mkdir(f"{self.checkpoint_path}/{self.attack_prep_dir}/")
+
+
 
     def init_trainer(self):
         """Setting up the global model to be trained via federated learning."""
@@ -36,7 +45,12 @@ class Server(fedavg.Server):
         self.encrypted_model = homo_enc.encrypt_weights(extract_model, True,
                                                         self.ckks_context, self.para_nums,
                                                         encrypt_ratio = 0)
-            
+
+        # Store the initial model
+
+        init_model_filename = f"{self.checkpoint_path}/{self.attack_prep_dir}/init.pth"
+        with open(init_model_filename, 'wb') as init_file:
+            pickle.dump(self.encrypted_model["unencrypted_weights"], init_file)
 
     def mask_consensus(self, updates):
         proposals = [mask for (__, __, mask, __) in updates]
@@ -60,6 +74,12 @@ class Server(fedavg.Server):
             # Decrypt model weights for test accuracy
             decrypted_weights = homo_enc.decrypt_weights(self.encrypted_model, 
                                                          self.weight_shapes, self.para_nums)
+
+            
+            latest_model_filename = f"{self.checkpoint_path}/{self.attack_prep_dir}/latest.pth"
+            with open(latest_model_filename, 'wb') as latest_file:
+                pickle.dump(decrypted_weights, latest_file)
+
             self.algorithm.load_weights(decrypted_weights)
 
             self.encrypted_model["encrypted_weights"] = self.encrypted_model["encrypted_weights"].serialize()
@@ -111,7 +131,7 @@ class Server(fedavg.Server):
             return self.last_selected_clients
     
     async def process_reports(self):
-        if self.current_round % 2 != 0:
+        if self.current_round % 2 == 0:
             await super().process_reports()
         else:
             await self.aggregate_weights(self.updates)

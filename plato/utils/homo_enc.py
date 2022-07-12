@@ -139,12 +139,15 @@ def update_est(config, client_id, data):
     model_name = config.trainer.model_name
     run_id = config.params["run_id"]
     checkpoint_path = config.params['checkpoint_path']
+    attack_prep_dir =  f"{config.data.datasource}_{config.trainer.model_name}_{config.clients.encrypt_ratio}"
+    if not os.path.exists(f"{checkpoint_path}/{attack_prep_dir}/"):
+        os.mkdir(f"{checkpoint_path}/{attack_prep_dir}/")
 
-    est_filename = f"{checkpoint_path}/{model_name}_est_{run_id}_{client_id}.pth"
+    est_filename = f"{checkpoint_path}/{attack_prep_dir}/{model_name}_est_{client_id}.pth"
     old_est = get_est(est_filename)
-    new_est = unencrypted_weights.clone().detach()
+    new_est = unencrypted_weights.clone().detach().double()
     if not old_est is None:
-        new_est[encrypted_indices] = old_est[encrypted_indices]
+        new_est[encrypted_indices] = old_est[encrypted_indices].double()
 
     with open(est_filename, 'wb') as est_file:
         pickle.dump(new_est, est_file)
