@@ -158,3 +158,19 @@ def get_est(filename):
             return pickle.load(est_file)
     except:
         return None
+
+def check_accuracy(dataloader, model):
+    correct = 0
+    total = 0
+    model.eval()
+    with torch.no_grad():
+        for examples, labels in dataloader:
+            examples, labels = examples.to('cpu'), labels.to(
+                    'cpu')
+
+            outputs = model(examples)
+            _, predicted = outputs.max(1)
+            total += predicted.size(0)
+            correct += (predicted == labels).sum().item()
+    
+    return correct / total
