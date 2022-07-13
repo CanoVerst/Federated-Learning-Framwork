@@ -61,10 +61,9 @@ class Client(simple.Client):
         product = delta * grad_flat
         
         _, indices = torch.sort(product, descending = True)
-        positive_number = torch.sum(product > 0)
         mask_len = int(self.encrypt_ratio * len(indices))
     
-        return indices[:min(positive_number, mask_len)].clone().detach()
+        return indices[:mask_len].clone().detach()
 
 
     async def payload_to_arrive(self, response):
