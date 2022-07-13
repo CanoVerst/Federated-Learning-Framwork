@@ -323,13 +323,13 @@ def get_shapes_dict(model_name, num_classes):
         shapes_dict[weight_name] = weight.size()
     return shapes_dict
 
-def export_target_model(model_name, num_classes):
-    checkpoint_path = "./checkpoints"
-    filename = f"{checkpoint_path}/{model_name}_est_{28154}_{2}.pth"
+def export_target_model(model_name, num_classes, filename):
+    # checkpoint_path = "./checkpoints"
+    # filename = f"{checkpoint_path}/{model_name}_est_{28154}_{2}.pth"
     with open(filename, 'rb') as est_file:
         est_model = pickle.load(est_file)
         est_file.close()
-    
+                                                                                                
     shapes_dict = get_shapes_dict(model_name, num_classes)
     len_list = len_from_shape(shapes_dict)
     est_model = torch.split(est_model, len_list)
@@ -339,20 +339,19 @@ def export_target_model(model_name, num_classes):
     for name, shape in shapes_dict.items():
         rebuilt_statedict[name] = est_model[weight_index].reshape(shape)
         weight_index = weight_index + 1
-    print(rebuilt_statedict['linear.bias'])
     
     rebuilt_model = get_model_ins(model_name, num_classes)
     rebuilt_model.load_state_dict(rebuilt_statedict)
 
     return rebuilt_model
 
+if __name__ == "__main__":
+    exported_model = export_target_model('resnet_18', 100)
 
-exported_model = export_target_model('resnet_18', 100)
-
-"""
-print(type(exported_model))
-print(exported_model.cpu().state_dict()['linear.bias'])
-print(rebuilt_statedict.keys())
-for value in rebuilt_statedict.values():
-    print(value.size())
-"""
+    """
+    print(type(exported_model))
+    print(exported_model.cpu().state_dict()['linear.bias'])
+    print(rebuilt_statedict.keys())
+    for value in rebuilt_statedict.values():
+        print(value.size())
+    """
