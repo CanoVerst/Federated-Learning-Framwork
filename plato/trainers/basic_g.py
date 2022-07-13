@@ -60,15 +60,18 @@ class Trainer(basic.Trainer):
 
         train_loader = torch.utils.data.DataLoader(dataset=trainset,
                                                        shuffle=False,
-                                                       batch_size=len(sampler),
+                                                       batch_size=Config().trainer.batch_size,
                                                        sampler=sampler)
-        examples, labels = next(iter(train_loader))
-        examples, labels = examples.to(self.device), labels.to(self.device)
+        # Set the existing gradients to zeros
+        [x.grad.zero_() for x in list(self.model.parameters())]
         self.model.to(self.device)
-        outputs = self.model(examples)
-        loss_criterion = torch.nn.CrossEntropyLoss()
-        loss = loss_criterion(outputs, labels)
-        loss.backward()
+        for idx,(examples, labels) in enumerate(train_loader):
+            examples, labels = examples.to(self.device), labels.to(self.device)
+            outputs = self.model(examples)
+            loss_criterion = torch.nn.CrossEntropyLoss()
+            loss = loss_criterion(outputs, labels) 
+            loss = loss * (len(labels) / len(sampler))  
+            loss.backward()
 
         param_dict = dict(list(self.model.named_parameters()))
         state_dict = self.model.state_dict()
