@@ -116,10 +116,7 @@ def decrypt_weights(encrypted_weights, weight_shapes = None, para_nums = None):
 
     # Rebuild the original weight vector by returning selected values
     if encrypt_indices != None:
-        sample_index = 0
-        for index in encrypt_indices:
-            unencrypted_weights[index] = decrypted_sample_vector[sample_index]
-            sample_index += 1
+        unencrypted_weights[encrypt_indices] = decrypted_sample_vector
 
     # Convert flattened weight vector back to a dict of weight tensors
     decrypted_weights_vector = unencrypted_weights
