@@ -44,10 +44,13 @@ class Client(simple.Client):
 
     def compute_mask(self, latest_weights, gradients):
         exposed_flat = self.get_exposed_weights()
+        device = exposed_flat.device
         latest_flat = torch.cat([torch.flatten(latest_weights[name]) for _, name 
                                     in enumerate(latest_weights)]) 
-        grad_flat = torch.cat([torch.flatten(gradients[name]) for _, name 
-                                    in enumerate(gradients)]) 
+        gradient_list = [torch.flatten(gradients[name]).to(device) for _, name
+                                                    in enumerate(gradients)]
+        grad_flat = torch.cat(gradient_list) 
+
         
         # Store the plain model weights
         plain_filename = f"{self.checkpoint_path}/{self.attack_prep_dir}/{Config().trainer.model_name}_plain_{self.client_id}.pth"
