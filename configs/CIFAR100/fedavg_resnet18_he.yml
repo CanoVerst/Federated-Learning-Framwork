@@ -6,7 +6,10 @@ clients:
     total_clients: 100
 
     # The number of clients selected in each round
-    per_round: 20
+    per_round: 10
+
+    # Encrypt ratio
+    encrypt_ratio: 0.20
 
     # Should the clients compute test accuracy locally?
     do_test: false
@@ -35,6 +38,9 @@ data:
 
     # IID or non-IID?
     sampler: iid
+
+    # random seed for sampler
+    random_seed: 1
 
     # Number of classes
     num_classes: 100
