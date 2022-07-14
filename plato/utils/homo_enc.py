@@ -124,6 +124,7 @@ def decrypt_weights(encrypted_weights, weight_shapes = None, para_nums = None):
     weight_index = 0
     for name, shape in weight_shapes.items():
         decrypted_weights[name] = decrypted_weights_vector[weight_index].reshape(shape)
+        decrypted_weights[name] = decrypted_weights[name].clone().detach()
         weight_index = weight_index + 1
 
     return decrypted_weights
