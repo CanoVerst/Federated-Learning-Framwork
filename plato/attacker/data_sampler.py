@@ -5,8 +5,6 @@ import torch
 from torchvision import datasets, transforms
 from torch.utils.data import SubsetRandomSampler
 
-from plato.attacker.cifar100 import CIFAR100_DataSource
-from plato.attacker.purchase import Purchase_DataSource
 import plato.datasources.registry as data_registry
 
 class IndependentSampler():
