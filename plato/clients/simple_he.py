@@ -3,6 +3,7 @@ A basic federated learning client with homomorphic encryption support
 """
 
 import logging
+import random
 import time
 import sys
 import torch
@@ -32,7 +33,12 @@ class Client(simple.Client):
         super().__init__(model = model, datasource = datasource, algorithm = algorithm, trainer = trainer)
 
         self.encrypt_ratio = Config().clients.encrypt_ratio
+        self.random_mask = Config().clients.random_mask
+
         self.attack_prep_dir = f"{Config().data.datasource}_{Config().trainer.model_name}_{self.encrypt_ratio}"
+        if self.random_mask:
+            self.attack_prep_dir += "_random"
+
         self.checkpoint_path = Config().params['checkpoint_path']
         self.model_buffer = []
     
@@ -44,6 +50,9 @@ class Client(simple.Client):
 
     def compute_mask(self, latest_weights, gradients):
         exposed_flat = self.get_exposed_weights()
+        if self.random_mask:
+            rand_mask = random.sample(range(len(exposed_flat)), int(self.encrypt_ratio * len(exposed_flat)))
+            return torch.tensor(rand_mask)
         device = exposed_flat.device
         latest_flat = torch.cat([torch.flatten(latest_weights[name]) for _, name 
                                     in enumerate(latest_weights)]) 

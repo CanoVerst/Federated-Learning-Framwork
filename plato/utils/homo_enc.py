@@ -138,6 +138,8 @@ def update_est(config, client_id, data):
     run_id = config.params["run_id"]
     checkpoint_path = config.params['checkpoint_path']
     attack_prep_dir =  f"{config.data.datasource}_{config.trainer.model_name}_{config.clients.encrypt_ratio}"
+    if config.clients.random_mask:
+        attack_prep_dir += "_random"
     if not os.path.exists(f"{checkpoint_path}/{attack_prep_dir}/"):
         os.mkdir(f"{checkpoint_path}/{attack_prep_dir}/")
 

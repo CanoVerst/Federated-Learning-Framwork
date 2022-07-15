@@ -7,10 +7,10 @@ clients:
 
     # encrypt ratio
     encrypt_ratio: 0.05
-
+    random_mask: True
+    
     # The number of clients selected in each round
     per_round: 20
-    random_mask: False
 
     # Should the clients compute test accuracy locally?
     do_test: false

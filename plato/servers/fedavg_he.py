@@ -28,6 +28,8 @@ class Server(fedavg.Server):
 
         self.checkpoint_path = Config().params['checkpoint_path']
         self.attack_prep_dir =  f"{Config().data.datasource}_{Config().trainer.model_name}_{Config().clients.encrypt_ratio}"
+        if Config().clients.random_mask:
+            self.attack_prep_dir += "_random"
         if not os.path.exists(f"{self.checkpoint_path}/{self.attack_prep_dir}/"):
             os.mkdir(f"{self.checkpoint_path}/{self.attack_prep_dir}/")
 
