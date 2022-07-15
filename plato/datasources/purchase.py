@@ -71,10 +71,10 @@ class DataSource(base.DataSource):
         return train_dataset, test_dataset
 
     def num_train_examples(self):
-        return 20000
+        return len(self.trainset)
 
     def num_test_examples(self):
-        return 20000
+        return len(self.testset)
 
 
 
