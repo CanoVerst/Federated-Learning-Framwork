@@ -7,6 +7,8 @@ import collections
 import torch.nn as nn
 import torch.nn.functional as F
 
+from plato.models.multilayer import Model as multilayer_model
+
 class Lenet5Model(nn.Module):
     """The LeNet-5 model.
     Arguments:
@@ -305,7 +307,8 @@ def get_model_ins(model_name, num_classes):
     elif model_name == 'resnet_18':
         model_ins = ResnetModel.get_model(model_name, num_classes)
         return model_ins
-
+    elif model_name == "multilayer":
+        return multilayer_model.get_model()
     return model_ins
 
 def len_from_shape(shapes_dict):
@@ -315,22 +318,23 @@ def len_from_shape(shapes_dict):
         len_list.append(int(np.prod(shape)))
     return len_list
 
-def get_shapes_dict(model_name, num_classes):
-    model_ins = get_model_ins(model_name, num_classes)
+def get_shapes_dict(model_ins):
     state_dict = model_ins.cpu().state_dict()
     shapes_dict = OrderedDict()
     for weight_name, weight in state_dict.items():
         shapes_dict[weight_name] = weight.size()
     return shapes_dict
 
-def export_target_model(model_name, num_classes, filename):
+def export_target_model(shapes_dict, filename):
     # checkpoint_path = "./checkpoints"
     # filename = f"{checkpoint_path}/{model_name}_est_{28154}_{2}.pth"
     with open(filename, 'rb') as est_file:
         est_model = pickle.load(est_file)
         est_file.close()
-                                                                                                
-    shapes_dict = get_shapes_dict(model_name, num_classes)
+
+    if isinstance(est_model, OrderedDict):
+        return est_model
+
     len_list = len_from_shape(shapes_dict)
     est_model = torch.split(est_model, len_list)
     weight_index = 0
@@ -338,12 +342,10 @@ def export_target_model(model_name, num_classes, filename):
 
     for name, shape in shapes_dict.items():
         rebuilt_statedict[name] = est_model[weight_index].reshape(shape)
+        rebuilt_statedict[name] = rebuilt_statedict[name].clone().detach()
         weight_index = weight_index + 1
-    
-    rebuilt_model = get_model_ins(model_name, num_classes)
-    rebuilt_model.load_state_dict(rebuilt_statedict)
 
-    return rebuilt_model
+    return rebuilt_statedict
 
 if __name__ == "__main__":
     exported_model = export_target_model('resnet_18', 100)

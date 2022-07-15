@@ -1,6 +1,6 @@
 import argparse
 from plato.attacker.attack_agent import AttackAgent
-
+from plato.config import Config
 
 if __name__ == "__main__":
     # parser = argparse.ArgumentParser()
@@ -15,5 +15,5 @@ if __name__ == "__main__":
     # test_data_loaders = None
 
     # attack_model = None
-    agent = AttackAgent()
+    agent = AttackAgent(Config())
     agent.attack()
