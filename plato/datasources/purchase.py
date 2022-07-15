@@ -5,6 +5,7 @@ import os
 import logging
 import urllib
 import tarfile
+from sklearn.model_selection import train_test_split
 import torch
 import numpy as np
 from torch.utils import data
@@ -56,11 +57,12 @@ class DataSource(base.DataSource):
         X, Y = X[indices], Y[indices]
 
         ## extract 20000 data samplers for training and testing respectively
-        num_train = 20000
-        train_data = X[:num_train]
-        test_data = X[num_train:num_train * 2]
-        train_label = Y[:num_train]
-        test_label = Y[num_train:num_train * 2]
+        # num_train = 20000
+        # train_data = X[:num_train]
+        # test_data = X[num_train:num_train * 2]
+        # train_label = Y[:num_train]
+        # test_label = Y[num_train:num_train * 2]
+        train_data,test_data, train_label, test_label = train_test_split(X, Y, test_size = 0.2)
 
         ## create datasets
         train_dataset = VectorDataset(train_data, train_label)
