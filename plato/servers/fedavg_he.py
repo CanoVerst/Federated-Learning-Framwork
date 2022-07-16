@@ -57,14 +57,17 @@ class Server(fedavg.Server):
     def mask_consensus(self, updates):
         proposals = [mask for (__, __, mask, __) in updates]
         mask_size = len(proposals[0])
-        interleaved_indices = torch.zeros((sum([len(x) for x in proposals])))
-        for i in range(len(proposals)):
-            interleaved_indices[i::len(proposals)] = proposals[i]
-        
-        _, indices = interleaved_indices.unique(sorted=False, return_inverse = True)
-        
-        self.final_mask = interleaved_indices[indices.unique()[:mask_size]].clone().detach()
-        self.final_mask = self.final_mask.int().long()
+        if mask_size == 0:
+            self.final_mask = torch.tensor([])
+        else:
+            interleaved_indices = torch.zeros((sum([len(x) for x in proposals])))
+            for i in range(len(proposals)):
+                interleaved_indices[i::len(proposals)] = proposals[i]
+            
+            _, indices = interleaved_indices.unique(sorted=False, return_inverse = True)
+            
+            self.final_mask = interleaved_indices[indices.unique()[:mask_size]].clone().detach()
+            self.final_mask = self.final_mask.int().long()
 
     async def aggregate_weights(self, updates):
         """Aggregate the reported weight updates from the selected clients."""

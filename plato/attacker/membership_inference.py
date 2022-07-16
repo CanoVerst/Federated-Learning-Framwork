@@ -6,6 +6,8 @@ import torch
 
 def train_attack_model(shadow_model, shadow_client_loaders, shadow_test_loader, N_class):
     
+    min_size = min(len(shadow_client_loaders.sampler), len(shadow_test_loader.sampler))
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     shadow_model.to(device)
         
@@ -20,9 +22,12 @@ def train_attack_model(shadow_model, shadow_client_loaders, shadow_test_loader, 
                 data = data.to(device)
                 out = shadow_model(data)
                 pred_4_mem = torch.cat([pred_4_mem, out])
+                if len(pred_4_mem) > min_size:
+                    break
     pred_4_mem = pred_4_mem[1:,:]
     pred_4_mem = torch.softmax(pred_4_mem,dim = 1)
     pred_4_mem = pred_4_mem.cpu()
+    pred_4_mem = pred_4_mem.sort(axis = 1, descending = True).values[:,:3]
     pred_4_mem = pred_4_mem.detach().numpy()
     
     ####
@@ -33,9 +38,13 @@ def train_attack_model(shadow_model, shadow_client_loaders, shadow_test_loader, 
             data = data.to(device)
             out = shadow_model(data)
             pred_4_nonmem = torch.cat([pred_4_nonmem, out])
+            if len(pred_4_nonmem) > min_size:
+                break
     pred_4_nonmem = pred_4_nonmem[1:,:]
     pred_4_nonmem = torch.softmax(pred_4_nonmem,dim = 1)
     pred_4_nonmem = pred_4_nonmem.cpu()
+    pred_4_nonmem = pred_4_nonmem.sort(axis = 1, descending = True).values[:,:3]
+    pred_4_nonmem = nonmember_filter(pred_4_nonmem, desired_number = min_size)
     pred_4_nonmem = pred_4_nonmem.detach().numpy()
     
     
@@ -44,7 +53,7 @@ def train_attack_model(shadow_model, shadow_client_loaders, shadow_test_loader, 
     att_y = att_y.astype(np.int16)
     
     att_X = np.vstack((pred_4_mem, pred_4_nonmem))
-    att_X.sort(axis=1)
+    
     
     X_train,X_test, y_train, y_test = train_test_split(att_X, att_y, test_size = 0.1)
     
@@ -89,9 +98,10 @@ def _attack(target_model, attack_model, client_loaders, test_loader, N_class):
                     
     mem_X = mem_X[1:,:]
     mem_X = torch.softmax(mem_X,dim = 1)
+
+    mem_X = mem_X.sort(axis = 1, descending = True).values[:,:3]
     mem_X = mem_X.cpu().detach().numpy()
     
-    mem_X.sort(axis=1)
     mem_y = np.ones(mem_X.shape[0])
     mem_y = mem_y.astype(np.int16)
     
@@ -110,9 +120,11 @@ def _attack(target_model, attack_model, client_loaders, test_loader, N_class):
                 break
     test_X = test_X[1:N_mem_sample+1,:]
     test_X = torch.softmax(test_X,dim = 1)
+    test_X = test_X.sort(axis = 1, descending = True).values[:,:3]
+
+    test_X = nonmember_filter(test_X, desired_number = N_mem_sample)
     test_X = test_X.cpu().detach().numpy()
     
-    test_X.sort(axis=1)
     test_y = np.zeros(test_X.shape[0])
     test_y = test_y.astype(np.int16)
     
@@ -122,12 +134,18 @@ def _attack(target_model, attack_model, client_loaders, test_loader, N_class):
     YY = np.hstack((mem_y, test_y))
     
     pred_YY = attack_model.predict(XX)
-    # acc = accuracy_score( YY, pred_YY)
+    acc = accuracy_score( YY, pred_YY)
     pre = precision_score(YY, pred_YY, pos_label=1)
     rec = recall_score(YY, pred_YY, pos_label=1)
-    # print("MIA Attacker accuracy = {:.4f}".format(acc))
+    print("MIA Attacker accuracy = {:.4f}".format(acc))
     print("MIA Attacker precision = {:.4f}".format(pre))
     print("MIA Attacker recall = {:.4f}".format(rec))
-    
-    return (pre, rec)
+    return (acc, pre, rec)
 
+def nonmember_filter(features, desired_number = None):
+    if desired_number is None:
+        desired_number = int(len(features) / 2)
+    if desired_number == len(features):
+        desired_number = int(len(features) / 2)
+    selected_features = features.sort(axis = 0).values[:desired_number]
+    return selected_features.clone().detach()
