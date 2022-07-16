@@ -106,7 +106,7 @@ class AttackAgent:
         plain_result = []
         est_result = []
 
-        for i in random.sample(range(1, self.num_clients + 1), 2):
+        for i in random.sample(range(1, self.num_clients + 1), min(5, self.num_clients)):
             plain_model = self.models["plain"][i]
             est_model = self.models["est"][i]
             if plain_model is None or est_model is None:
