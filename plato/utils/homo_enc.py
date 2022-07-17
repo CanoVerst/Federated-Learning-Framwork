@@ -160,13 +160,14 @@ def get_est(filename):
         return None
 
 def check_accuracy(dataloader, model):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
     correct = 0
     total = 0
     model.eval()
     with torch.no_grad():
         for examples, labels in dataloader:
-            examples, labels = examples.to('cpu'), labels.to(
-                    'cpu')
+            examples, labels = examples.to(device), labels.to(device)
 
             outputs = model(examples)
             _, predicted = outputs.max(1)
