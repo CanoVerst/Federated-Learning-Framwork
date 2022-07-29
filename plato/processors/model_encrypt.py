@@ -4,6 +4,7 @@ A processor that encrypts model weights tensors.
 
 from turtle import st
 import logging
+import time
 from typing import Any
 
 import torch
@@ -30,12 +31,16 @@ class Processor(model.Processor):
         logging.info(
             "[Client #%d] Applying a processor that encrypts the model.",
             self.client_id)
+        start_time = time.time()
         encrypted_weights = homo_enc.encrypt_weights(data, 
                                     serialize = True,
                                     context = self.context,
                                     para_nums = self.para_nums,
                                     encrypt_ratio = 0.05,
                                     enc_mask = self.encrypt_mask)
+
+        logging.info(f"Encryption Time: {time.time() - start_time}")
+
         homo_enc.update_est(Config(), self.client_id, encrypted_weights)
         return encrypted_weights
 

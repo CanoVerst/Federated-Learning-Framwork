@@ -3,8 +3,10 @@ A simple federated learning server using federated averaging.
 """
 
 import asyncio
+import logging
 import os
 import pickle
+import time
 from typing import OrderedDict
 import torch
 from plato.config import Config
@@ -74,8 +76,10 @@ class Server(fedavg.Server):
         if self.current_round % 2 != 0:
             self.mask_consensus(updates)
         else:
-            self.encrypted_model = await self.federated_averaging_he(updates)
+            start_time = time.time()
 
+            self.encrypted_model = await self.federated_averaging_he(updates)
+            logging.info(f"Averaging Time: {time.time() - start_time}")
             # Decrypt model weights for test accuracy
             decrypted_weights = homo_enc.decrypt_weights(self.encrypted_model, 
                                                          self.weight_shapes, self.para_nums)
