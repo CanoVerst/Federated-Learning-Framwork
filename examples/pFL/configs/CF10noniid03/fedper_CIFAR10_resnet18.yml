@@ -172,7 +172,7 @@ trainer:
     personalized_model_name: resnet_18
 
     # encoder, whole
-    global_model_name: encoder
+    global_submodules_prefix: encoder
     # whether to maintain the state of the trained personalized
     # model in each round
     # In general, for the contrastive self-supervised learning
