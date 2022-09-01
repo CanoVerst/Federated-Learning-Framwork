@@ -1,5 +1,5 @@
 """
-The enhanced federated averaging algorithm for PyTorch.
+The enhanced federated averaging algorithm to aggregates the  .
 
 It adds more properties to the original implementation of fedavg.py.
 
@@ -29,6 +29,7 @@ These properties are:
                 The parameters of the encoder will be added prefix 'encoder.'
                 while the prefix for parameters of classifier is 'classifier'.
                 With this function, we can extract these unique prefixes.
+                
     - support: (complete_weights)
                 Complete the given weights to make the completed weights have same
                 parameters as the self.model.

@@ -11,7 +11,7 @@ import fedavg_client
 import fedavg_trainer
 
 from plato.servers import fedavg_pers
-from plato.algorithms import fedavg_pers as fedavg_algo
+from plato.algorithms import fedavg_partial as fedavg_algo
 
 
 def main():
