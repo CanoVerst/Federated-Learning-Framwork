@@ -1,48 +1,39 @@
 """
-The enhanced federated averaging algorithm to aggregates the  .
+The enhanced federated averaging algorithm to aggregate partial sub-modules of one whole model.
 
-It adds more properties to the original implementation of fedavg.py.
+Utilization condition:
+    In some scenarios, even given one defined model, the users want to utilize the partial 
+    sub-modules as the global model in federated learning. Thus, solely these desired 
+    sub-modules will be extracted and aggregated during the learning process. 
+    Then, noticing that the names of parameters in one sub-module hold consistent prefixes, 
+    we propose this piece of code to support the aforementioned feature by setting the 
+    hyper-parameter 'global_submodules_prefix' in the config file. 
 
-These properties are:
+For example
+ A. Given the defined whole model: encoder + head, the hyper-parameter in the config 
+    file 'global_submodules_prefix' under the 'trainer' can be set to:
+    - whole     : utilizing the whole model as the global model
+    - encoder   : utilizing the encoder as the global model
+    - head      : utilizing the head as the global model
 
-    - support: (extract_weights)
-                Randomly set one part of the whole model as the global model
-                that will be exchanged between clients and the server.
-               This can be defined by the hyper-parameter in the config file
-               'global_model_name: xxx'.
+    Demo:
 
-               For example, when the whole model is the combination of
-                encoder + classifier
-                the global model can be set to be:
-                * only the encoder as the global model
-                    global_model_name: encoder
-                * only the classifier as the global model
-                    global_model_name: classifier
-                * equalivent to the whole model as the global model
-                    global_model_name: encoder__classifier
-                 or global_model_name: whole
-
-    - support: (extract_parameters_prefix)
-                Extract the prefixes of the parameters in one model.
-                For example, if the model is the combination of encoder and classifier,
-                i.e., encoder + classifier.
-                The parameters of the encoder will be added prefix 'encoder.'
-                while the prefix for parameters of classifier is 'classifier'.
-                With this function, we can extract these unique prefixes.
-                
-    - support: (complete_weights)
-                Complete the given weights to make the completed weights have same
-                parameters as the self.model.
+        trainer:
+            global_submodules_prefix: encoder
 
 
-In general, this enhanced fedavg is generally utilized in personalized federated learning.
-The main reason is that each client can hold models on its side to complete the downloaded global
-model.
+ B. Given the defined whole model: encoder1 + encoder2 + encoder3 + head1 + head2,
+    the hyper-parameter in the config file 'global_submodules_prefix' under the 'trainer' 
+    can be set to 
+    - whole                 : utilizing the whole model as the global model
+    - encoder1__encoder2    : utilizing solely encoder1 and encoder2 as the global model
+    - encoder2__head1       : utilizing solely encoder2 and head as the global model
+    - encoder2__head1__head2: utilizing solely encoder2, head1 and head2 as the global model
 
-This is why to denote this implementation to be 'fedavg_pers.py'
+    Demo:
 
-This fedavg_pers is commonly utilized in cooperation with the clients/pers_simple.py
-
+        trainer:
+            global_submodules_prefix: encoder1__encoder2
 """
 
 import logging
@@ -53,18 +44,19 @@ from plato.config import Config
 from plato.trainers.base import Trainer
 
 
-def is_global_parameter(param_name, global_model_name):
-    """ whether the param_name in the desired global model name.
+def is_global_parameter(param_name, global_submodules_prefix):
+    """ Whether the 'param_name' contained in the 'global_submodules_prefix'.
 
-        e.g. the global_model_name is:
-            - whole
-            - online_network
-            - online_network__online_predictor
-            - encoder
-            - encoder__cls_fc
+        Args:
+            param_name (str): the name str of the parameter
+            global_submodules_prefix (str): the str that defines the modules' name
+                of the global model. The sub-str of each module is connected 
+                by '__'.
+                E.g. encoder1__encoder2
+
     """
     flag = False
-    global_params_prefix = global_model_name.split("__")
+    global_params_prefix = global_submodules_prefix.split("__")
     for para_prefix in global_params_prefix:
         if para_prefix in param_name:
             flag = True
@@ -73,54 +65,60 @@ def is_global_parameter(param_name, global_model_name):
 
 
 class Algorithm(fedavg.Algorithm):
-    """ Federated averaging algorithm for Byol models, used by both the client and the server. """
+    """ Federated averaging algorithm, used by both the client and the server. """
 
     def __init__(self, trainer: Trainer):
         super().__init__(trainer=trainer)
+
         # the sub-module's name that is used as the global model
         # shared among clients.
         # by default, the whole model will be used as the global model
-        # i.e., global_model_name = "whole"
+        # i.e., global_submodules_prefix = "whole"
         # however, the user can set which component of the model is used
-        # as the global model by setting its name. Thus, the algorithm can
-        # extract the corresponding global sub-module from the whole model
-        # to be exchanged between the server and clients
-        self.global_model_name = "whole"
+        # as the global model by declaring its prefix in the config file. 
+
+        self.global_submodules_prefix = "whole"
+
 
     def extract_weights(self, model=None):
-        """Extract weights from the model.
+        """ Extract weights from the model.
 
             To not break the current Plato's code, we follow the principle:
             1.- Once the model is provided, i,e, model != None, its paramters
                 will be extracted directly.
+
             2.- If the model is None, it is required to extract the default
                 model, i.e., the self.model of this algo. Currenty, the
-                'global_model_name' defined in the config file will be used
+                'global_submodules_prefix' defined in the config file will be used
                 to extract the desired sub-module from the self.model
 
         """
-        if hasattr(Config().trainer, "global_model_name"):
-            self.global_model_name = Config().trainer.global_model_name
-            prefix_names = self.global_model_name.split("__")
+        if hasattr(Config().trainer, "global_submodules_prefix"):
+            self.global_submodules_prefix = Config().trainer.global_submodules_prefix
+            prefix_names = self.global_submodules_prefix.split("__")
             logging.info(
                 f"Extracting the global parameters with prefix {prefix_names}."
             )
 
         if model is None:
-            if self.global_model_name == "whole":
+            if self.global_submodules_prefix == "whole":
                 return self.model.cpu().state_dict()
             else:
                 full_weights = self.model.cpu().state_dict()
                 extracted_weights = OrderedDict([
                     (name, param) for name, param in full_weights.items()
-                    if is_global_parameter(name, self.global_model_name)
+                    if is_global_parameter(name, self.global_submodules_prefix)
                 ])
                 return extracted_weights
 
         else:
             return model.cpu().state_dict()
 
+
     def is_incomplete_weights(self, weights):
+        """ Whether the given 'weights' does not hold consistent parameters 
+            with the self.model """
+
         model_params = self.model.state_dict()
         for para_name in list(model_params.keys()):
             if para_name not in weights:
@@ -128,8 +126,10 @@ class Algorithm(fedavg.Algorithm):
 
         return False
 
-    def extract_parameters_prefix(self, parameters_name):
-        """ Extracting the major prefixs of a group of parameters. """
+
+    def extract_parameters_unique_prefix(self, parameters_name):
+        """ Extracting the unique prefixes from given parameters' names. """
+
         extracted_prefix = []
 
         # the para name is presented as encoder.xxx.xxx
@@ -148,22 +148,22 @@ class Algorithm(fedavg.Algorithm):
 
         return extracted_prefix
 
-    def complete_weights(self, weights, pool_weights):
-        """ Completet the weights for self.model based on the
-            'weights' and 'pool_weights'.
 
-            The 'weights' has the highes pariority, thus the para data
-            in 'weights' will be used for self.model's completation.
-            Then, if 'weights' does not contain the parameters of self.model,
-            the weights in 'pool_weights' will be utilized.
+    def complete_weights(self, weights, auxiliary_weights):
+        """ Completeting the weights for self.model based on the
+            'weights' and 'auxiliary_weights'.
 
-            Therefore, the 'pool_weights' is regarded as a parameters pool for
-            others to select from.
+            'weights' has the [highest priority], so parameter data in 'weights' 
+            is assigned to the corresponding parameters of self.model first.
+
+            Then, if 'weights' does not contain the parameters of self.model, 
+            the weights in 'auxiliary_weights' will be utilized.
+
 
             Args:
                 weights (OrderDict): the obtained OrderDict containing
-                    parameters that are generally extracted by state_dict
-                pool_weights (OrderDict): the same structure and data type
+                    parameters that are generally extracted by the func state_dict()
+                auxiliary_weights (OrderDict): the same structure and data type
                     as 'weights'.
 
             Returns:
@@ -172,43 +172,38 @@ class Algorithm(fedavg.Algorithm):
                     self.model
                 prefixes_of_existence (list): the prefixes for parameters
                     in 'weights'
-                prefixes_of_completion (list): the prefixes for parameters
-                    that are selected from the 'pool_weights' to be used
+                prefixes_of_auxiliary (list): the prefixes for parameters
+                    that are selected from the 'auxiliary_weights' to be used
                     for completion.
         """
-        weights_of_completion = list()
+
+        # weights that are obtained from the 'auxiliary_weights'
+        weights_of_auxiliary = list()
+        # weights that are obtained from the 'weights'
         weights_of_existence = list()
+        # params of the whole model
         model_params = self.model.state_dict()
+        # full weights assigned to the model
         completed_weights = OrderedDict()
+
         for para_name in list(model_params.keys()):
             if para_name in weights:
                 completed_weights[para_name] = weights[para_name]
                 weights_of_existence.append(para_name)
             else:
-                completed_weights[para_name] = pool_weights[para_name]
-                weights_of_completion.append(para_name)
+                completed_weights[para_name] = auxiliary_weights[para_name]
+                weights_of_auxiliary.append(para_name)
 
-        prefixes_of_existence = self.extract_parameters_prefix(
+        prefixes_of_existence = self.extract_parameters_unique_prefix(
             weights_of_existence)
-        prefixes_of_completion = self.extract_parameters_prefix(
-            weights_of_completion)
+        prefixes_of_auxiliary = self.extract_parameters_unique_prefix(
+            weights_of_auxiliary)
 
-        return completed_weights, prefixes_of_existence, prefixes_of_completion
+        return completed_weights, prefixes_of_existence, prefixes_of_auxiliary
+
 
     def load_weights(self, weights, strict=False):
-        """Load the model weights passed in as a parameter.
+        """ Load the model weights passed in as a parameter.
 
-            In the client side, we should complete the weights (OrderDict) from the
-            server if the weights only contain part of the whole model.
-            Thus, the 'strict' should be True, as the completed weights should
-            contain same paras as the client's model.
-            In the server side, there is no need to complete the weights as the
-            server will always extract weights by self.extract_weights to obtain the
-            desired weights, i.e., ensure always operate on the global model.
-            Thus, the 'strict' should be False as we only load the operated weights to
-            the model.
-
-            But wihout losing generality, we set strict = False here as the algorithm class
-            is utilized by the server and the client simutaneously.
         """
         self.model.load_state_dict(weights, strict=strict)
