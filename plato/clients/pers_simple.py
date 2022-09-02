@@ -20,7 +20,7 @@ import json
 import logging
 import time
 from collections import Counter
-from dataclasses import dataclass
+from types import SimpleNamespace
 import copy
 
 import torch
@@ -32,13 +32,6 @@ from plato.utils.arrange_saving_name import get_format_name
 from plato.utils.checkpoint_operator import perform_client_checkpoint_loading, reset_all_weights
 from plato.clients import base
 from plato.utils import fonts
-
-
-@dataclass
-class Report(base.Report):
-    """Report from a simple client, to be sent to the federated learning server."""
-    comm_time: float
-    update_response: bool
 
 
 class Client(simple.Client):
@@ -286,7 +279,7 @@ class Client(simple.Client):
 
         self.algorithm.load_weights(completed_payload, strict=True)
 
-        # Also, we load the personalization model.
+        # load the personalization model.
         self.load_personalized_model()
 
     async def train(self):
@@ -358,15 +351,28 @@ class Client(simple.Client):
 
         comm_time = time.time()
 
-        if hasattr(Config().clients,
-                   'sleep_simulation') and Config().clients.sleep_simulation:
+        if (hasattr(Config().clients, "sleep_simulation")
+                and Config().clients.sleep_simulation):
             sleep_seconds = Config().client_sleep_times[self.client_id - 1]
             avg_training_time = Config().clients.avg_training_time
-            self.report = Report(self.sampler.trainset_size(), accuracy,
-                                 (avg_training_time + sleep_seconds) *
-                                 Config().trainer.epochs, comm_time, False)
-        else:
-            self.report = Report(self.sampler.trainset_size(), accuracy,
-                                 training_time, comm_time, False)
 
-        return self.report, weights
+            report = SimpleNamespace(
+                num_samples=self.sampler.num_samples(),
+                accuracy=accuracy,
+                training_time=(avg_training_time + sleep_seconds) *
+                Config().trainer.epochs,
+                comm_time=comm_time,
+                update_response=False,
+            )
+        else:
+            report = SimpleNamespace(
+                num_samples=self.sampler.num_samples(),
+                accuracy=accuracy,
+                training_time=training_time,
+                comm_time=comm_time,
+                update_response=False,
+            )
+
+        self._report = self.customize_report(report)
+
+        return self._report, weights

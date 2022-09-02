@@ -44,9 +44,8 @@ from tqdm import tqdm
 
 from plato.config import Config
 from plato.trainers import basic
-from plato.utils import optimizers
+from plato.trainers import optimizers
 from plato.utils.checkpoint_operator import perform_client_checkpoint_saving
-from plato.utils.checkpoint_operator import get_client_checkpoint_operator
 from plato.utils.arrange_saving_name import get_format_name
 
 from plato.utils import data_loaders_wrapper
