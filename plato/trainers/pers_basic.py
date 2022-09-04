@@ -44,7 +44,7 @@ from tqdm import tqdm
 
 from plato.config import Config
 from plato.trainers import basic
-from plato.trainers import optimizers
+from plato.trainers import optimizers, lr_schedulers, tracking, loss_criterion
 from plato.utils.checkpoint_operator import perform_client_checkpoint_saving
 from plato.utils.arrange_saving_name import get_format_name
 
@@ -67,6 +67,21 @@ class Trainer(basic.Trainer):
     def set_client_personalized_model(self, personalized_model):
         """ Setting the client's personalized model """
         self.personalized_model = personalized_model
+
+    def get_loss_criterion(self, stage_prefix=None):
+        """Returns the loss criterion."""
+        return loss_criterion.get(stage_prefix)
+
+    def get_optimizer(self, model, stage_prefix=None):
+        """Returns the optimizer."""
+        return optimizers.get(model, stage_prefix)
+
+    def get_lr_scheduler(self, config, optimizer, stage_prefix=None):
+        """Returns the learning rate scheduler, if needed."""
+        if "lr_scheduler" not in config:
+            return None
+
+        return lr_schedulers.get(optimizer, len(self.train_loader), stage_prefix=stage_prefix)
 
     @staticmethod
     def process_save_path(filename, location, work_model_name,
@@ -256,44 +271,6 @@ class Trainer(basic.Trainer):
                                filename=save_filename,
                                location=save_location)
 
-    def prepare_train_lr(self, optimizer, train_data_loader, config,
-                         current_round):
-        """ Prepare the lr schedule for training process.
-
-            The obtained lr should be scheduled in the whole learning
-            process, i.e., communication_rounds * local_epochs
-        """
-
-        epochs = config['epochs']
-        iterations_per_epoch = len(train_data_loader)
-        # Note, the lr_schedule_base_epoch is an important term to make the
-        # lr_schedulr work correctly.
-        # The main reason is that the trainer will create a new lr schedule
-        # in each round. Then, the epoch within one round will always start
-        # from 0. Therefore, if the lr schedule works based this local epoch,
-        # the lr will never be modified correctly as that in the central learning.
-        # Thus, we need a term to denote the global epoch.
-        # In round 1, the base global epoch should be 0. Thus, the local epoch
-        # can start from 1 * 0 to epochs, i.e., [0, epochs].
-        # In round 2, the base global epoch should be 'epochs'. Thus, the local epoch
-        # can start from 1 * 'epochs' to epochs + 'epochs', i.e, [epochs, epochs + epochs]
-        # Then, in round r, the base global epoch should be (current_round - 1) * epochs
-        # Therefore, the local epoch for the lr schedule can:
-        #   start from lr_schedule_base_epoch + 0,
-        #   to
-        #   lr_schedule_base_epoch + epochs
-        lr_schedule_base_epoch = (current_round - 1) * epochs
-
-        # Initializing the learning rate schedule, if necessary
-        lr_schedule = optimizers.get_dynamic_lr_schedule(
-            optimizer, iterations_per_epoch, train_data_loader)
-
-        # Updated the lr_schedule to the latest status
-        if lr_schedule_base_epoch != 0:
-            for _ in range(1, lr_schedule_base_epoch + 1):
-                lr_schedule.step()
-
-        return lr_schedule, lr_schedule_base_epoch
 
     def train_one_epoch(self, config, epoch, defined_model, optimizer,
                         loss_criterion, train_data_loader, epoch_loss_meter,
@@ -368,7 +345,6 @@ class Trainer(basic.Trainer):
         config,
         trainset,
         sampler,
-        cut_layer,
         **kwargs,
     ):
         """ The default personalized training loop when a custom training loop is not supplied.
@@ -386,61 +362,25 @@ class Trainer(basic.Trainer):
         config['current_round'] = current_round
 
         tic = time.perf_counter()
+        self.sampler = sampler
 
-        logging.info("[Client #%d] Loading the dataset.", self.client_id)
+        self.run_history.reset()
 
-        # to get the specific sampler, Plato's sampler should perform
-        # Sampler.get()
-        # However, for train's ssampler, the self.sampler.get() has been
-        # performed within the train_process of the trainer/basic.py
-        # Thus, there is no need to further perform .get() here.
-        train_loader = torch.utils.data.DataLoader(dataset=trainset,
-                                                   shuffle=False,
-                                                   batch_size=batch_size,
-                                                   sampler=sampler)
+        self.train_run_start(config)
+        self.callback_handler.call_event("on_train_run_start", self, config)
 
-        # obtain the loader for unlabeledset if possible
-        # unlabeled_trainset, unlabeled_sampler
-        unlabeled_loader = None
-        unlabeled_trainset = []
-        if "unlabeled_trainset" in kwargs and kwargs[
-                "unlabeled_trainset"] is not None:
-            unlabeled_trainset = kwargs["unlabeled_trainset"]
-            unlabeled_sampler = kwargs["unlabeled_sampler"]
-            unlabeled_loader = torch.utils.data.DataLoader(
-                dataset=unlabeled_trainset,
-                shuffle=False,
-                batch_size=batch_size,
-                sampler=unlabeled_sampler.get())
-
-        # wrap the multiple loaders into one sequence loader
-        streamed_train_loader = data_loaders_wrapper.StreamBatchesLoader(
-            [train_loader, unlabeled_loader])
-
-        epoch_model_log_interval = epochs + 1
-        if "epoch_model_log_interval" in config:
-            epoch_model_log_interval = config['epoch_model_log_interval']
+        self.train_loader = Trainer.get_train_loader(batch_size, trainset, sampler)
 
         # Initializing the loss criterion
-        _loss_criterion = getattr(self, "loss_criterion", None)
-        if callable(_loss_criterion):
-            loss_criterion = self.loss_criterion(self.model, config)
-        else:
-            loss_criterion = torch.nn.CrossEntropyLoss()
+        _loss_criterion = self.get_loss_criterion()
 
         # Initializing the optimizer
-        _optimizer_func = getattr(self, "get_optimizer", None)
-        if callable(_optimizer_func):
-            optimizer = self.get_optimizer(self.model, config)
-        else:
-            optimizer = optimizers.get_dynamic_optimizer(self.model)
-
-        # Initializing the learning rate schedule, if necessary
-        lr_schedule, lr_schedule_base_epoch = self.prepare_train_lr(
-            optimizer, streamed_train_loader, config, current_round)
+        optimizer = self.get_optimizer(self.model)
+        self.lr_scheduler = self.get_lr_scheduler(config, optimizer)
+        optimizer = self._adjust_lr(config, self.lr_scheduler, optimizer)
 
         logging.info(
-            f"With {lr_schedule}, we get lr={lr_schedule.get_lr()} under the global epoch {lr_schedule_base_epoch}"
+            f"With {self.lr_scheduler}, we get lr={self.lr_scheduler.get_lr()} under the global epoch"
         )
 
         # Before the training, we expect to save the initial
@@ -463,8 +403,8 @@ class Trainer(basic.Trainer):
         self.model.to(self.device)
 
         # Define the container to hold the logging information
-        epoch_loss_meter = optimizers.AverageMeter(name='Loss')
-        batch_loss_meter = optimizers.AverageMeter(name='Loss')
+        epoch_loss_meter = tracking.AverageMeter(name='Loss')
+        batch_loss_meter = tracking.AverageMeter(name='Loss')
 
         # Start training
         for epoch in range(1, epochs + 1):
@@ -473,14 +413,14 @@ class Trainer(basic.Trainer):
                                  epoch,
                                  defined_model=self.model,
                                  optimizer=optimizer,
-                                 loss_criterion=loss_criterion,
-                                 train_data_loader=streamed_train_loader,
+                                 loss_criterion=_loss_criterion,
+                                 train_data_loader=self.train_loader,
                                  epoch_loss_meter=epoch_loss_meter,
                                  batch_loss_meter=batch_loss_meter)
 
             # Update the learning rate
             # based on the base epoch
-            lr_schedule.step()
+            self.lr_scheduler.step()
             # this is determinted by whether to perform the detailed
             # checkpoints of the training models
             # if 'do_detailed_checkpoint' in config and config[
@@ -515,14 +455,14 @@ class Trainer(basic.Trainer):
                 model_state_dict=self.model.state_dict(),
                 config=config,
                 optimizer_state_dict=optimizer.state_dict(),
-                lr_schedule_state_dict=lr_schedule.state_dict(),
+                lr_schedule_state_dict=_loss_criterion.state_dict(),
                 present_epoch=None,
-                base_epoch=lr_schedule_base_epoch + epochs)
+                base_epoch=(current_round - 1) * epochs + epochs)
 
     def perform_evaluation_op(self, to_eval_data_loader, defined_model):
 
         # Define the test phase of the eval stage
-        acc_meter = optimizers.AverageMeter(name='Accuracy')
+        acc_meter = tracking.AverageMeter(name='Accuracy')
         defined_model.eval()
         defined_model.to(self.device)
 
@@ -696,7 +636,6 @@ class Trainer(basic.Trainer):
         config,
         trainset,
         sampler,
-        cut_layer,
         **kwargs,
     ):
         """ The default training loop when a custom training loop is not supplied.
@@ -731,25 +670,18 @@ class Trainer(basic.Trainer):
 
             # Perform the personalization
             #   i.e., the client's personal local dataset
-            pers_optimizer = optimizers.get_dynamic_optimizer(
-                self.personalized_model, prefix="pers_")
+            pers_optimizer = optimizers.get(self.personalized_model,
+                                            stage_prefix="pers")
             iterations_per_epoch = len(pers_train_loader)
 
             # Initializing the learning rate schedule, if necessary
-            assert 'pers_lr_schedule' in config
-            lr_schedule = optimizers.get_dynamic_lr_schedule(
+            lr_schedule = lr_schedulers.get(
                 optimizer=pers_optimizer,
                 iterations_per_epoch=iterations_per_epoch,
-                train_loader=pers_train_loader,
-                prefix="pers_")
+                stage_prefix="pers")
 
-            # Initializing the loss criterion
-            _pers_loss_criterion = getattr(self, "pers_loss_criterion", None)
-            if callable(_pers_loss_criterion):
-                pers_loss_criterion = self.pers_loss_criterion(
-                    self.personalized_model)
-            else:
-                pers_loss_criterion = torch.nn.CrossEntropyLoss()
+            # # Initializing the loss criterion
+            _pers_loss_criterion = self.get_loss_criterion(stage_prefix="pers")
 
             self.personalized_model.to(self.device)
 
@@ -758,7 +690,7 @@ class Trainer(basic.Trainer):
             pers_epochs = config['pers_epochs']
 
             # epoch loss tracker
-            epoch_loss_meter = optimizers.AverageMeter(name='Loss')
+            epoch_loss_meter = tracking.AverageMeter(name='Loss')
 
             # Start personalization training
             # Note:
@@ -786,7 +718,7 @@ class Trainer(basic.Trainer):
                     defined_model=self.personalized_model,
                     pers_optimizer=pers_optimizer,
                     lr_schedule=lr_schedule,
-                    pers_loss_criterion=pers_loss_criterion,
+                    pers_loss_criterion=_pers_loss_criterion,
                     pers_train_loader=pers_train_loader,
                     epoch_loss_meter=epoch_loss_meter)
 
@@ -844,12 +776,7 @@ class Trainer(basic.Trainer):
         else:
             return accuracy
 
-    def pers_train_process(self,
-                           config,
-                           trainset,
-                           sampler,
-                           cut_layer=None,
-                           **kwargs):
+    def pers_train_process(self, config, trainset, sampler, **kwargs):
         """The main training loop in a federated learning workload, run in
           a separate process with a new CUDA context, so that CUDA memory
           can be released after the training completes.
@@ -859,13 +786,11 @@ class Trainer(basic.Trainer):
         config: a dictionary of configuration parameters.
         trainset: The training dataset.
         sampler: The sampler that extracts a partition for this client.
-        cut_layer (optional): The layer which training should start from.
         kwargs (optional): Additional keyword arguments.
         """
 
         try:
-            self.pers_train_model(config, trainset, sampler, cut_layer,
-                                  **kwargs)
+            self.pers_train_model(config, trainset, sampler, **kwargs)
         except Exception as training_exception:
             logging.info("Personalization Training on client #%d failed.",
                          self.client_id)
@@ -877,14 +802,13 @@ class Trainer(basic.Trainer):
             filename = f"{model_type}_{self.client_id}_{config['run_id']}.pth"
             self.save_personalized_model(filename)
 
-    def pers_train(self, trainset, sampler, cut_layer=None, **kwargs) -> float:
+    def pers_train(self, trainset, sampler, **kwargs) -> float:
         """The main training loop in a federated learning workload for
             the personalization.
 
         Arguments:
         trainset: The training dataset.
         sampler: the sampler that extracts a partition for this client.
-        cut_layer (optional): The layer which training should start from.
         kwargs (optional): Additional keyword arguments.
 
         Returns:
@@ -906,8 +830,7 @@ class Trainer(basic.Trainer):
                 mp.set_start_method('spawn', force=True)
 
             train_proc = mp.Process(target=self.pers_train_process,
-                                    args=(config, trainset, sampler,
-                                          cut_layer),
+                                    args=(config, trainset, sampler),
                                     kwargs=kwargs)
             train_proc.start()
             train_proc.join()
@@ -925,11 +848,10 @@ class Trainer(basic.Trainer):
                     f"Training on client {self.client_id} failed.") from error
 
             toc = time.perf_counter()
-            self.pause_training()
+            #self.pause_training()
         else:
             tic = time.perf_counter()
-            self.pers_train_process(config, trainset, sampler, cut_layer,
-                                    **kwargs)
+            self.pers_train_process(config, trainset, sampler, **kwargs)
             toc = time.perf_counter()
 
         training_time = toc - tic

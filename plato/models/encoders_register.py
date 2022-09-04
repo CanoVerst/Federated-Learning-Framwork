@@ -33,7 +33,8 @@ class TruncatedLeNetModel(nn.Module):
 
     def forward(self, samples):
         """ Forward to specific layer (cut)_layer) of LeNet5. """
-        return self.model.forward_to(samples, cut_layer="flatten")
+        self.model.cut_layer = "flatten"
+        return self.model.forward_to(samples)
 
 
 def get():

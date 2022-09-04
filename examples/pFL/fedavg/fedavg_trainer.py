@@ -11,8 +11,7 @@ warnings.simplefilter('ignore')
 
 import torch
 from tqdm import tqdm
-from plato.trainers import pers_basic
-from plato.utils import optimizers
+from plato.trainers import pers_basic, tracking
 
 
 class Trainer(pers_basic.Trainer):
@@ -31,7 +30,7 @@ class Trainer(pers_basic.Trainer):
     def perform_evaluation_op(self, to_eval_data_loader, defined_model):
 
         # Define the test phase of the eval stage
-        acc_meter = optimizers.AverageMeter(name='Accuracy')
+        acc_meter = tracking.AverageMeter(name='Accuracy')
         defined_model.eval()
         defined_model.to(self.device)
         correct = 0

@@ -43,8 +43,7 @@ class RunHistory:
             return self._metrics[metric_name][-1]
         else:
             raise ValueError(
-                f"No values have been recorded for the metric {metric_name}"
-            )
+                f"No values have been recorded for the metric {metric_name}")
 
     def update_metric(self, metric_name, metric_value):
         """
@@ -93,3 +92,35 @@ class LossTracker:
         """Returns the computed average of loss values tracked."""
 
         return self._average.cpu().detach().mean().item()
+
+
+class AverageMeter():
+    """Computes and stores the average and current value"""
+
+    def __init__(self, name, format=':f'):
+        self.name = name
+        self.format = format
+        self.log = []
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def reset(self):
+        """ Reset the meter collector. """
+        self.log.append(self.avg)
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, num_of_items=1):
+        """ Update the meter collector. """
+        self.val = val
+        self.sum += val * num_of_items
+        self.count += num_of_items
+        self.avg = self.sum / self.count
+
+    def __str__(self):
+        format_str = '{name} {val' + self.format + '} ({avg' + self.format + '})'
+        return format_str.format(**self.__dict__)
