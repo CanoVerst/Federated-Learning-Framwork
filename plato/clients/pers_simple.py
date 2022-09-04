@@ -232,13 +232,13 @@ class Client(simple.Client):
         """
         logging.info("[Client #%d] Received the global model: [%s].",
                      self.client_id,
-                     Config().trainer.global_model_name)
+                     Config().trainer.global_submodules_prefix)
 
         if self.algorithm.is_incomplete_weights(server_payload):
             logging.info(
                 "[Client #%d] Received [%s], is incompleted to be assigned to the local model.",
                 self.client_id,
-                Config().trainer.global_model_name)
+                Config().trainer.global_submodules_prefix)
 
             filename, cpk_oper = perform_client_checkpoint_loading(
                 client_id=self.client_id,
@@ -254,7 +254,7 @@ class Client(simple.Client):
             if filename is None:
                 # using the client's local model that is randomly initialized
                 # at this round
-                global_model_name = Config().trainer.global_model_name
+                global_model_name = Config().trainer.global_submodules_prefix
                 tmpl_model = copy.deepcopy(self.trainer.model)
                 reset_all_weights(tmpl_model)
                 pool_weights = tmpl_model.state_dict()

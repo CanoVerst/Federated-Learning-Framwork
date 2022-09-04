@@ -18,10 +18,10 @@ clients:
     type: simple
 
     # The total number of clients
-    total_clients: 100
+    total_clients: 10
 
     # The number of clients selected in each round
-    per_round: 30
+    per_round: 3
 
     do_data_tranform_logging: True
 
@@ -39,10 +39,10 @@ clients:
     do_final_personalization: True
     # Minotor the self-supervised learning by knn for
     # every 1 round
-    test_interval: 10
+    test_interval: 1
     # Train the personalized model based on the
     # learned representation every 1 rounds
-    pers_learning_interval: 10
+    pers_learning_interval: 1
 
     # Whether simulate clients or not
     simulation: true
