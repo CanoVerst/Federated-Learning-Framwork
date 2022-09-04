@@ -20,8 +20,11 @@ def get_target_lr_scheduler(stage_prefix: None):
     lr_schedulers_prefix = {None: "lr_scheduler", "pers": "pers_lr_scheduler"}
     lr_params_prefix = {None: "learning_rate", "pers": "pers_learning_rate"}
 
-    scheduler = lr_schedulers_prefix[stage_prefix]
-    lr_params = lr_params_prefix[stage_prefix]
+    scheduler_name = lr_schedulers_prefix[stage_prefix]
+    lr_params_name = lr_params_prefix[stage_prefix]
+
+    scheduler = getattr(Config().trainer, scheduler_name)
+    lr_params = getattr(Config().parameters, lr_params_name)._asdict()
 
     return scheduler, lr_params
 
