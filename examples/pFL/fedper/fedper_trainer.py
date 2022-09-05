@@ -3,7 +3,6 @@ A personalized federated learning trainer using FedPer.
 
 """
 
-import logging
 import warnings
 
 warnings.simplefilter('ignore')
@@ -52,60 +51,41 @@ class Trainer(pers_basic.Trainer):
 
         return outputs
 
-    def on_start_pers_train(
+    def pers_train_run_start(
         self,
-        defined_model,
-        model_name,
-        data_loader,
-        epoch,
-        global_epoch,
         config,
-        optimizer,
-        lr_schedule,
         **kwargs,
     ):
         """ The customize behavior before performing one epoch of personalized training.
             By default, we need to save the encoded data, the accuracy, and the model when possible.
         """
         current_round = config['current_round']
-        eval_outputs, _ = super().on_start_pers_train(defined_model,
-                                                      model_name, data_loader,
-                                                      epoch, global_epoch,
-                                                      config, optimizer,
-                                                      lr_schedule)
+        eval_outputs, _ = super().pers_train_run_start(config, **kwargs)
+
         self.checkpoint_encoded_samples(
             encoded_samples=eval_outputs['encoded_samples'],
             encoded_labels=eval_outputs['loaded_labels'],
             current_round=current_round,
-            epoch=epoch,
+            epoch=self.current_epoch,
             run_id=None,
             encoded_type="testEncoded")
 
         return eval_outputs, _
 
-    def on_end_pers_train_epoch(
+    def pers_train_epoch_end(
         self,
-        defined_model,
-        model_name,
-        data_loader,
-        epoch,
-        global_epoch,
         config,
-        optimizer,
-        lr_schedule,
-        epoch_loss_meter,
         **kwargs,
     ):
         current_round = config['current_round']
-        eval_outputs = super().on_end_pers_train_epoch(
-            defined_model, model_name, data_loader, epoch, global_epoch,
-            config, optimizer, lr_schedule, epoch_loss_meter)
+        eval_outputs = super().pers_train_epoch_end(config, **kwargs)
+
         if eval_outputs:
             self.checkpoint_encoded_samples(
                 encoded_samples=eval_outputs['encoded_samples'],
                 encoded_labels=eval_outputs['loaded_labels'],
                 current_round=current_round,
-                epoch=epoch,
+                epoch=self.current_epoch,
                 run_id=None,
                 encoded_type="testEncoded")
 

@@ -9,6 +9,7 @@ warnings.simplefilter('ignore')
 
 import torch
 from tqdm import tqdm
+
 from plato.trainers import pers_basic, tracking
 
 
@@ -24,6 +25,62 @@ class Trainer(pers_basic.Trainer):
         for name, param in model.named_parameters():
             if param_prefix is not None and param_prefix in name:
                 param.requires_grad = True
+
+    def train_one_epoch(self, config, optimizer, loss_criterion,
+                        train_data_loader, epoch_loss_meter):
+        self.model.train()
+        epochs = config['epochs']
+        epoch = self.current_epoch
+
+        # load the local update epochs for head optimization
+        head_epochs = config[
+            'head_epochs'] if 'head_epochs' in config else epochs - 1
+
+        # As presented in Section 3 of the FedRep paper, the head is optimized
+        # for (epochs - 1) while freezing the representation.
+        if epoch <= head_epochs:
+            self.freeze_model(self.model, param_prefix="encoder")
+            self.active_model(self.model, param_prefix="clf_fc")
+
+        # The representation will then be optimized for only one epoch
+        if epoch > head_epochs:
+            self.freeze_model(self.model, param_prefix="clf_fc")
+            self.active_model(self.model, param_prefix="encoder")
+
+        epoch_loss_meter.reset()
+        # Use a default training loop
+        for batch_id, (examples, labels) in enumerate(train_data_loader):
+            examples, labels = self.train_step_start(config,
+                                                     batch_samples=examples,
+                                                     batch_labels=labels)
+
+            # Reset and clear previous data
+            optimizer.zero_grad()
+
+            # Forward the model and compute the loss
+            outputs = self.model(examples)
+            loss = loss_criterion(outputs, labels)
+
+            # Perform the backpropagation
+            if "create_graph" in config:
+                loss.backward(create_graph=config["create_graph"])
+            else:
+                loss.backward()
+
+            optimizer.step()
+
+            # Update the loss data in the logging container
+            epoch_loss_meter.update(loss, labels.size(0))
+
+            self.train_step_end(config, batch=batch_id, loss=loss)
+            self.callback_handler.call_event("on_train_step_end",
+                                             self,
+                                             config,
+                                             batch=batch_id,
+                                             loss=loss)
+
+        if hasattr(optimizer, "params_state_update"):
+            optimizer.params_state_update()
 
     def perform_evaluation_op(self, to_eval_data_loader, defined_model):
 

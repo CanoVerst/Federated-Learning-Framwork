@@ -293,10 +293,10 @@ class Trainer(basic.Trainer):
 
         return batch_samples, batch_labels
 
-    def train_one_epoch(self, config, epoch, defined_model, optimizer,
-                        loss_criterion, train_data_loader, epoch_loss_meter):
+    def train_one_epoch(self, config, optimizer, loss_criterion,
+                        train_data_loader, epoch_loss_meter):
         """ Perform one epoch of training. """
-        defined_model.train()
+        self.model.train()
         epoch_loss_meter.reset()
 
         # Use a default training loop
@@ -309,7 +309,7 @@ class Trainer(basic.Trainer):
             optimizer.zero_grad()
 
             # Forward the model and compute the loss
-            outputs = defined_model(examples)
+            outputs = self.model(examples)
             loss = loss_criterion(outputs, labels)
 
             # Perform the backpropagation
@@ -379,8 +379,6 @@ class Trainer(basic.Trainer):
                                              config)
 
             self.train_one_epoch(config,
-                                 epoch=self.current_epoch,
-                                 defined_model=self.model,
                                  optimizer=optimizer,
                                  loss_criterion=_loss_criterion,
                                  train_data_loader=self.train_loader,
@@ -443,87 +441,24 @@ class Trainer(basic.Trainer):
 
         return outputs
 
-    def on_end_pers_train_epoch(
-        self,
-        defined_model,
-        model_name,
-        data_loader,
-        epoch,
-        global_epoch,
-        config,
-        optimizer,
-        lr_schedule,
-        epoch_loss_meter,
-        **kwargs,
-    ):
-        """ The customize behavior after performing one epoch of personalized training.
-
-            By default, we need to save the encoded data, the accuracy, and the model when possible.
-        """
-
-        pers_epochs = config["pers_epochs"]
-        current_round = config['current_round']
-        epoch_log_interval = pers_epochs + 1
-        epoch_model_log_interval = pers_epochs + 1
-        eval_outputs = {}
-        if "pers_epoch_log_interval" in config:
-            epoch_log_interval = config['pers_epoch_log_interval']
-
-        if "pers_epoch_model_log_interval" in config:
-            epoch_model_log_interval = config['pers_epoch_model_log_interval']
-
-        if (epoch - 1) % epoch_log_interval == 0 or epoch == pers_epochs:
-            logging.info(
-                "[Client #%d] Personalization Training Epoch: [%d/%d]\tLoss: %.6f",
-                self.client_id, epoch, pers_epochs, epoch_loss_meter.average)
-
-            eval_outputs = self.perform_evaluation_op(data_loader,
-                                                      defined_model)
-            accuracy = eval_outputs["accuracy"]
-
-            # save the personaliation accuracy to the results dir
-            self.checkpoint_personalized_accuracy(accuracy=accuracy,
-                                                  current_round=current_round,
-                                                  epoch=epoch,
-                                                  run_id=None)
-
-        # Whether to store the checkpoints
-        if (epoch - 1) % epoch_model_log_interval == 0 or epoch == pers_epochs:
-            # the model generated during each round will be stored in the
-            # checkpoints
-            perform_client_checkpoint_saving(
-                client_id=self.client_id,
-                model_name=model_name,
-                model_state_dict=self.personalized_model.state_dict(),
-                config=config,
-                optimizer_state_dict=optimizer.state_dict(),
-                lr_schedule_state_dict=lr_schedule.state_dict(),
-                present_epoch=epoch,
-                base_epoch=global_epoch,
-                prefix="personalized")
-
-        return eval_outputs
-
     def pers_train_one_epoch(
         self,
         config,
-        epoch,
-        defined_model,
         pers_optimizer,
         lr_schedule,
-        pers_loss_criterion,
-        pers_train_loader,
+        loss_criterion,
+        train_loader,
         epoch_loss_meter,
     ):
         """ Performing one epoch of learning for the personalization. """
 
         epoch_loss_meter.reset()
-        defined_model.train()
-        defined_model.to(self.device)
-
+        self.personalized_model.train()
+        self.personalized_model.to(self.device)
+        epoch = self.current_epoch
         pers_epochs = config["pers_epochs"]
 
-        local_progress = tqdm(pers_train_loader,
+        local_progress = tqdm(train_loader,
                               desc=f'Epoch {epoch}/{pers_epochs+1}',
                               disable=True)
 
@@ -536,8 +471,8 @@ class Trainer(basic.Trainer):
             pers_optimizer.zero_grad()
 
             # Perfrom the training and compute the loss
-            preds = defined_model(examples)
-            loss = pers_loss_criterion(preds, labels)
+            preds = self.personalized_model(examples)
+            loss = loss_criterion(preds, labels)
 
             # Perfrom the optimization
             loss.backward()
@@ -614,34 +549,30 @@ class Trainer(basic.Trainer):
         show_str = f"[Client #{self.client_id}] Personalization"
         global_progress = tqdm(range(1, pers_epochs + 1), desc=show_str)
 
-        for epoch in global_progress:
+        for self.current_epoch in global_progress:
             self.pers_train_epoch_start(config)
 
             epoch_loss_meter = self.pers_train_one_epoch(
                 config=config,
-                epoch=epoch,
-                defined_model=self.personalized_model,
                 pers_optimizer=pers_optimizer,
                 lr_schedule=pers_lr_scheduler,
-                pers_loss_criterion=_pers_loss_criterion,
-                pers_train_loader=self.train_loader,
+                loss_criterion=_pers_loss_criterion,
+                train_loader=self.train_loader,
                 epoch_loss_meter=epoch_loss_meter)
 
             pers_lr_scheduler.step()
 
-            eval_outputs = self.on_end_pers_train_epoch(
-                defined_model=self.personalized_model,
+            eval_outputs = self.pers_train_epoch_end(
+                config=config,
                 model_name=personalized_model_name,
                 data_loader=test_loader,
-                epoch=epoch,
-                global_epoch=epoch,
-                config=config,
                 optimizer=pers_optimizer,
                 lr_schedule=pers_lr_scheduler,
-                epoch_loss_meter=epoch_loss_meter)
+                loss=epoch_loss_meter.average)
 
         # get the accuracy of the client
         accuracy = eval_outputs["accuracy"]
+        self.pers_train_run_end(config)
 
         # save the personalized model for current round
         # to the model dir of this client
@@ -807,5 +738,61 @@ class Trainer(basic.Trainer):
     def pers_train_epoch_start(self, config):
         """Method called at the beginning of a personalized training epoch."""
 
-    def pers_train_epoch_end(self, config):
-        """Method called at the end of a personalized training epoch."""
+    def pers_train_epoch_end(
+        self,
+        config,
+        **kwargs,
+    ):
+        """ The customize behavior after performing one epoch of personalized training.
+
+            By default, we need to save the encoded data, the accuracy, and the model when possible.
+        """
+        model_name = config['model_name']
+        optimizer = kwargs['optimizer']
+        lr_schedule = kwargs['lr_schedule']
+        data_loader = kwargs['data_loader']
+        loss = kwargs['loss']
+        pers_epochs = config["pers_epochs"]
+        epoch = self.current_epoch
+
+        current_round = self.current_round
+        epoch_log_interval = pers_epochs + 1
+        epoch_model_log_interval = pers_epochs + 1
+        eval_outputs = {}
+        if "pers_epoch_log_interval" in config:
+            epoch_log_interval = config['pers_epoch_log_interval']
+
+        if "pers_epoch_model_log_interval" in config:
+            epoch_model_log_interval = config['pers_epoch_model_log_interval']
+
+        if (epoch - 1) % epoch_log_interval == 0 or epoch == pers_epochs:
+            logging.info(
+                "[Client #%d] Personalization Training Epoch: [%d/%d]\tLoss: %.6f",
+                self.client_id, epoch, pers_epochs, loss)
+
+            eval_outputs = self.perform_evaluation_op(data_loader,
+                                                      self.personalized_model)
+            accuracy = eval_outputs["accuracy"]
+
+            # save the personaliation accuracy to the results dir
+            self.checkpoint_personalized_accuracy(accuracy=accuracy,
+                                                  current_round=current_round,
+                                                  epoch=epoch,
+                                                  run_id=None)
+
+        # Whether to store the checkpoints
+        if (epoch - 1) % epoch_model_log_interval == 0 or epoch == pers_epochs:
+            # the model generated during each round will be stored in the
+            # checkpoints
+            perform_client_checkpoint_saving(
+                client_id=self.client_id,
+                model_name=model_name,
+                model_state_dict=self.personalized_model.state_dict(),
+                config=config,
+                optimizer_state_dict=optimizer.state_dict(),
+                lr_schedule_state_dict=lr_schedule.state_dict(),
+                present_epoch=epoch,
+                base_epoch=self.current_epoch * self.current_round,
+                prefix="personalized")
+
+        return eval_outputs
