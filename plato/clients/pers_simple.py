@@ -268,7 +268,7 @@ class Client(simple.Client):
                     self.client_id, filename)
 
             completed_payload, existed_prefixes, completed_prefixes = self.algorithm.complete_weights(
-                server_payload, pool_weights=pool_weights)
+                server_payload, auxiliary_weights=pool_weights)
             logging.info("[Client #%d] prefixes of the downloaded payload: %s",
                          self.client_id, ",".join(existed_prefixes))
             if completed_prefixes:

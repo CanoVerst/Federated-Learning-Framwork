@@ -345,7 +345,6 @@ class Trainer(basic.Trainer):
         """
         # Customize the config
         config = self.customize_train_config(config)
-        print("current_round: ", self.current_round)
         batch_size = config['batch_size']
         model_type = config['model_name']
 
@@ -567,7 +566,6 @@ class Trainer(basic.Trainer):
         """
         # Customize the config
         config = self.customize_train_config(config)
-        print("current_round: ", self.current_round)
         pers_epochs = config['pers_epochs']
         personalized_model_name = config['personalized_model_name']
         config['current_round'] = self.current_round
