@@ -58,20 +58,8 @@ server:
     ping_interval: 12000
     ping_timeout: 12000
 
-    # for the paths of models; checkpoints; results,
-    # they utilize the same name, following the one defined in
-    # plato.config:
-    # {ssl_method_name}_{model_name}_{global_model_name}_{personalized_model_name}_{datasource}
-    # - ssl_method_name: data.augment_transformer_name
-    # - model_name: trainer.model_name
-    # - global_model_name: data.global_model_name
-    # - personalized_model_name: data.personalized_model_name
-    # - datasource: data.datasource
-
-    # set xxx here as the config will set the path by itself
-    # thus we do not need to repeatly reset these paths
-    model_path: xxx
-    checkpoint_path: xxx
+    model_path: models
+    checkpoint_path: checkpoints
 
 
 data:
@@ -128,16 +116,8 @@ trainer:
     # space as more samples will be contained within one loading.
     epochs: 3
     batch_size: 64
-
     optimizer: SGD
-    learning_rate: 0.05
-    momentum: 0.9
-    weight_decay: 0.000001
-
-    # Learning rate schedule
-    lr_schedule: MultiStepLR
-    lr_gamma: 0.1
-    lr_milestones: 200,300
+    lr_scheduler: MultiStepLR
 
     epoch_log_interval: 1
     epoch_model_log_interval: 50
@@ -149,16 +129,8 @@ trainer:
     pers_epochs: 10
     pers_batch_size: 64
     pers_optimizer: SGD
-    # lr = 0.1 * batch_size / 256, see section B.6 and B.7 of SimCLR paper.
-    pers_learning_rate: 0.05
-    pers_momentum: 0.9
-    pers_weight_decay: 0.0
+    pers_lr_scheduler: MultiStepLR
 
-
-    # currently, we only support CosineAnnealingLR
-    pers_lr_schedule: MultiStepLR
-    pers_lr_milestones: 30,40
-    pers_lr_gamma: 0.1
 
     pers_epoch_log_interval: 2
     pers_epoch_model_log_interval: 10
@@ -192,5 +164,24 @@ algorithm:
     # Aggregation algorithm
     type: fedavg
 
+parameters:
+    optimizer:
+        lr: 0.05
+        momentum: 0.9
+        weight_decay: 0.000001
+
+    pers_optimizer:
+        lr: 0.05
+        momentum: 0.9
+        weight_decay: 0.0
+
+    learning_rate:
+        gamma: 0.1
+        milestone_steps: 150ep,350ep
+
+    pers_learning_rate:
+        gamma: 0.1
+        milestone_steps: 30ep,40ep
+
 results:
-    result_path: xxx
+    result_path: results
