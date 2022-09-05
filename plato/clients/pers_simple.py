@@ -288,6 +288,10 @@ class Client(simple.Client):
         rounds = Config().trainer.rounds
         accuracy = -1
         training_time = 0.0
+
+        if hasattr(self.trainer, "current_round"):
+            self.trainer.current_round = self.current_round
+
         # Perform model training
         if self.current_round < rounds and (
                 not (hasattr(Config().clients, "only_personalization")
@@ -299,10 +303,7 @@ class Client(simple.Client):
                     f"[{self}] Started training in communication round #{self.current_round}."
                 ))
             try:
-                training_time = self.trainer.train(
-                    self.trainset,
-                    self.sampler,
-                    current_round=self.current_round)
+                training_time = self.trainer.train(self.trainset, self.sampler)
             except ValueError:
                 await self.sio.disconnect()
 
@@ -321,8 +322,7 @@ class Client(simple.Client):
                     self.trainset,
                     self.sampler,
                     testset=self.testset,
-                    testset_sampler=self.testset_sampler,
-                    current_round=self.current_round)
+                    testset_sampler=self.testset_sampler)
             except ValueError:
                 await self.sio.disconnect()
 

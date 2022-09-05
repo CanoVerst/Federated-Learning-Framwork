@@ -47,13 +47,13 @@ class Trainer(pers_basic.Trainer):
                 features = defined_model.encoder(examples)
                 preds = defined_model.clf_fc(features).argmax(dim=1)
 
-                correct = (preds == labels).sum().item()
+                correct = (preds == labels).sum()
                 acc_meter.update(correct / preds.shape[0], labels.size(0))
 
                 encoded_samples.append(features)
                 loaded_labels.append(labels)
 
-        accuracy = acc_meter.avg
+        accuracy = acc_meter.average
 
         test_outputs = {
             "accuracy": accuracy,
@@ -103,12 +103,12 @@ class Trainer(pers_basic.Trainer):
             pers_optimizer.step()
 
             # Update the epoch loss container
-            epoch_loss_meter.update(loss.data.item(), labels.size(0))
+            epoch_loss_meter.update(loss, labels.size(0))
 
             local_progress.set_postfix({
                 'lr': lr_schedule,
                 "loss": epoch_loss_meter.val,
-                'loss_avg': epoch_loss_meter.avg
+                'loss_avg': epoch_loss_meter.average
             })
 
         return epoch_loss_meter

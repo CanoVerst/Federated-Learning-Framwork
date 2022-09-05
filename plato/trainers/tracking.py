@@ -93,7 +93,6 @@ class LossTracker:
 
         return self._average.cpu().detach().mean().item()
 
-
 class AverageMeter():
     """Computes and stores the average and current value"""
 
@@ -102,15 +101,15 @@ class AverageMeter():
         self.format = format
         self.log = []
         self.val = 0
-        self.avg = 0
+        self._average = 0
         self.sum = 0
         self.count = 0
 
     def reset(self):
         """ Reset the meter collector. """
-        self.log.append(self.avg)
+        self.log.append(self._average)
         self.val = 0
-        self.avg = 0
+        self._average = 0
         self.sum = 0
         self.count = 0
 
@@ -119,7 +118,13 @@ class AverageMeter():
         self.val = val
         self.sum += val * num_of_items
         self.count += num_of_items
-        self.avg = self.sum / self.count
+        self._average = self.sum / self.count
+
+    @property
+    def average(self):
+        """Returns the computed average of loss values tracked."""
+
+        return self._average.cpu().detach().mean().item()
 
     def __str__(self):
         format_str = '{name} {val' + self.format + '} ({avg' + self.format + '})'

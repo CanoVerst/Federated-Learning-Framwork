@@ -36,13 +36,13 @@ class Trainer(pers_basic.Trainer):
                 features = defined_model.encoder(examples)
                 preds = defined_model.clf_fc(features).argmax(dim=1)
 
-                correct = (preds == labels).sum().item()
+                correct = (preds == labels).sum()
                 acc_meter.update(correct / preds.shape[0], labels.size(0))
 
                 encoded_samples.append(features)
                 loaded_labels.append(labels)
 
-        accuracy = acc_meter.avg
+        accuracy = acc_meter.average
 
         outputs = {
             "accuracy": accuracy,

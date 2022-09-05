@@ -64,6 +64,8 @@ class Trainer(basic.Trainer):
         self.personalized_model = None
         self.personalized_model_state_dict = None
 
+        self._loss_tracker = tracking.AverageMeter(name='Loss')
+
     def set_client_personalized_model(self, personalized_model):
         """ Setting the client's personalized model """
         self.personalized_model = personalized_model
@@ -81,7 +83,9 @@ class Trainer(basic.Trainer):
         if "lr_scheduler" not in config:
             return None
 
-        return lr_schedulers.get(optimizer, len(self.train_loader), stage_prefix=stage_prefix)
+        return lr_schedulers.get(optimizer,
+                                 len(self.train_loader),
+                                 stage_prefix=stage_prefix)
 
     @staticmethod
     def process_save_path(filename, location, work_model_name,
@@ -271,39 +275,37 @@ class Trainer(basic.Trainer):
                                filename=save_filename,
                                location=save_location)
 
+    def train_step_start(self, config, batch_samples=None, batch_labels=None):
+        """
+        Method called at the start of a training step.
+
+        :param batch_samples: the current batch of samples.
+        :param batch_labels: the current batch of labesl.
+        """
+        if torch.is_tensor(batch_samples):
+            batch_samples = batch_samples.to(self.device)
+        else:
+            batch_samples = [
+                each_sample.to(self.device) for each_sample in batch_samples
+            ]
+
+        batch_labels = batch_labels.to(self.device)
+
+        return batch_samples, batch_labels
 
     def train_one_epoch(self, config, epoch, defined_model, optimizer,
-                        loss_criterion, train_data_loader, epoch_loss_meter,
-                        batch_loss_meter):
+                        loss_criterion, train_data_loader, epoch_loss_meter):
+        """ Perform one epoch of training. """
         defined_model.train()
-        epochs = config['epochs']
-        iterations_per_epoch = len(train_data_loader)
-        # default not to perform any logging
-        epoch_log_interval = epochs + 1
-        batch_log_interval = iterations_per_epoch
-
-        if "epoch_log_interval" in config:
-            epoch_log_interval = config['epoch_log_interval']
-        if "batch_log_interval" in config:
-            batch_log_interval = config['batch_log_interval']
-
         epoch_loss_meter.reset()
+
         # Use a default training loop
         for batch_id, (examples, labels) in enumerate(train_data_loader):
-            # Support a more general way to hold the loaded samples
-            # The defined model is responsible for processing the
-            # examples based on its requirements.
-            if torch.is_tensor(examples):
-                examples = examples.to(self.device)
-            else:
-                examples = [
-                    each_sample.to(self.device) for each_sample in examples
-                ]
-
-            labels = labels.to(self.device)
+            examples, labels = self.train_step_start(config,
+                                                     batch_samples=examples,
+                                                     batch_labels=labels)
 
             # Reset and clear previous data
-            batch_loss_meter.reset()
             optimizer.zero_grad()
 
             # Forward the model and compute the loss
@@ -311,31 +313,22 @@ class Trainer(basic.Trainer):
             loss = loss_criterion(outputs, labels)
 
             # Perform the backpropagation
-            loss.backward()
+            if "create_graph" in config:
+                loss.backward(create_graph=config["create_graph"])
+            else:
+                loss.backward()
+
             optimizer.step()
 
             # Update the loss data in the logging container
-            epoch_loss_meter.update(loss.data.item(), labels.size(0))
-            batch_loss_meter.update(loss.data.item(), labels.size(0))
+            epoch_loss_meter.update(loss, labels.size(0))
 
-            # Performe logging of one batch
-            if batch_id % batch_log_interval == 0 or batch_id == iterations_per_epoch - 1:
-                if self.client_id == 0:
-                    logging.info(
-                        "[Server #%d] Epoch: [%d/%d][%d/%d]\tLoss: %.6f",
-                        os.getpid(), epoch, epochs, batch_id,
-                        iterations_per_epoch - 1, batch_loss_meter.avg)
-                else:
-                    logging.info(
-                        "   [Client #%d] Training Epoch: \
-                        [%d/%d][%d/%d]\tLoss: %.6f", self.client_id, epoch,
-                        epochs, batch_id, iterations_per_epoch - 1,
-                        batch_loss_meter.avg)
-
-        # Performe logging of epochs
-        if (epoch - 1) % epoch_log_interval == 0 or epoch == epochs:
-            logging.info("[Client #%d] Training Epoch: [%d/%d]\tLoss: %.6f",
-                         self.client_id, epoch, epochs, epoch_loss_meter.avg)
+            self.train_step_end(config, batch=batch_id, loss=loss)
+            self.callback_handler.call_event("on_train_step_end",
+                                             self,
+                                             config,
+                                             batch=batch_id,
+                                             loss=loss)
 
         if hasattr(optimizer, "params_state_update"):
             optimizer.params_state_update()
@@ -352,24 +345,21 @@ class Trainer(basic.Trainer):
         """
         # Customize the config
         config = self.customize_train_config(config)
-
+        print("current_round: ", self.current_round)
         batch_size = config['batch_size']
         model_type = config['model_name']
-        current_round = kwargs['current_round']
-        run_id = config['run_id']
-        # Obtain the logging interval
-        epochs = config['epochs']
-        config['current_round'] = current_round
 
-        tic = time.perf_counter()
+        epochs = config['epochs']
+        config['current_round'] = self.current_round
+
         self.sampler = sampler
 
         self.run_history.reset()
-
         self.train_run_start(config)
         self.callback_handler.call_event("on_train_run_start", self, config)
 
-        self.train_loader = Trainer.get_train_loader(batch_size, trainset, sampler)
+        self.train_loader = Trainer.get_train_loader(batch_size, trainset,
+                                                     sampler)
 
         # Initializing the loss criterion
         _loss_criterion = self.get_loss_criterion()
@@ -379,71 +369,43 @@ class Trainer(basic.Trainer):
         self.lr_scheduler = self.get_lr_scheduler(config, optimizer)
         optimizer = self._adjust_lr(config, self.lr_scheduler, optimizer)
 
-        logging.info(
-            f"With {self.lr_scheduler}, we get lr={self.lr_scheduler.get_lr()} under the global epoch"
-        )
-
-        # Before the training, we expect to save the initial
-        # model of this round
-        # this is determinted by whether to perform the detailed
-        # checkpoints of the training models
-        # if 'do_detailed_checkpoint' in config and config[
-        #         'do_detailed_checkpoint']:
-        #     perform_client_checkpoint_saving(
-        #         client_id=self.client_id,
-        #         model_name=model_type,
-        #         model_state_dict=self.model.state_dict(),
-        #         config=config,
-        #         optimizer_state_dict=optimizer.state_dict(),
-        #         lr_schedule_state_dict=lr_schedule.state_dict(),
-        #         present_epoch=0,
-        #         base_epoch=lr_schedule_base_epoch)
-
         # Sending the model to the device used for training
         self.model.to(self.device)
 
-        # Define the container to hold the logging information
-        epoch_loss_meter = tracking.AverageMeter(name='Loss')
-        batch_loss_meter = tracking.AverageMeter(name='Loss')
-
         # Start training
-        for epoch in range(1, epochs + 1):
+        for self.current_epoch in range(1, epochs + 1):
             self.model.train()
+            self.train_epoch_start(config)
+            self.callback_handler.call_event("on_train_epoch_start", self,
+                                             config)
+
             self.train_one_epoch(config,
-                                 epoch,
+                                 epoch=self.current_epoch,
                                  defined_model=self.model,
                                  optimizer=optimizer,
                                  loss_criterion=_loss_criterion,
                                  train_data_loader=self.train_loader,
-                                 epoch_loss_meter=epoch_loss_meter,
-                                 batch_loss_meter=batch_loss_meter)
+                                 epoch_loss_meter=self._loss_tracker)
 
-            # Update the learning rate
-            # based on the base epoch
             self.lr_scheduler.step()
-            # this is determinted by whether to perform the detailed
-            # checkpoints of the training models
-            # if 'do_detailed_checkpoint' in config and config[
-            #         'do_detailed_checkpoint']:
-            #     if (epoch -
-            #             1) % epoch_model_log_interval == 0 or epoch == epochs:
-            #         # the model generated during each round will be stored in the
-            #         # checkpoints
-            #         perform_client_checkpoint_saving(
-            #             client_id=self.client_id,
-            #             model_name=model_type,
-            #             model_state_dict=self.model.state_dict(),
-            #             config=config,
-            #             optimizer_state_dict=optimizer.state_dict(),
-            #             lr_schedule_state_dict=lr_schedule.state_dict(),
-            #             present_epoch=epoch,
-            #             base_epoch=lr_schedule_base_epoch + epoch)
+
+            if hasattr(optimizer, "params_state_update"):
+                optimizer.params_state_update()
 
             # Simulate client's speed
             if self.client_id != 0 and hasattr(
                     Config().clients,
                     "speed_simulation") and Config().clients.speed_simulation:
                 self.simulate_sleep_time()
+
+            self.run_history.update_metric("train_loss",
+                                           self._loss_tracker.average)
+            self.train_epoch_end(config)
+            self.callback_handler.call_event("on_train_epoch_end", self,
+                                             config)
+
+        self.train_run_end(config)
+        self.callback_handler.call_event("on_train_run_end", self, config)
 
         if 'max_concurrency' in config:
             # the final of each round, the trained model within this round
@@ -457,10 +419,10 @@ class Trainer(basic.Trainer):
                 optimizer_state_dict=optimizer.state_dict(),
                 lr_schedule_state_dict=_loss_criterion.state_dict(),
                 present_epoch=None,
-                base_epoch=(current_round - 1) * epochs + epochs)
+                base_epoch=(self.current_round - 1) * epochs + epochs)
 
     def perform_evaluation_op(self, to_eval_data_loader, defined_model):
-
+        """ The operation of performing the evaluation on the testset with the defined model. """
         # Define the test phase of the eval stage
         acc_meter = tracking.AverageMeter(name='Accuracy')
         defined_model.eval()
@@ -476,52 +438,11 @@ class Trainer(basic.Trainer):
                 correct = (preds == labels).sum().item()
                 acc_meter.update(correct / preds.shape[0], labels.size(0))
 
-        accuracy = acc_meter.avg
+        accuracy = acc_meter.average
 
         outputs = {"accuracy": accuracy}
 
         return outputs
-
-    def on_start_pers_train(
-        self,
-        defined_model,
-        model_name,
-        data_loader,
-        epoch,
-        global_epoch,
-        config,
-        optimizer,
-        lr_schedule,
-        **kwargs,
-    ):
-        """ The customize behavior before performing one epoch of personalized training.
-
-            By default, we need to save the the accuracy, and the model when possible.
-        """
-        current_round = config['current_round']
-        save_checkpoint_filename = perform_client_checkpoint_saving(
-            client_id=self.client_id,
-            model_name=model_name,
-            model_state_dict=defined_model.state_dict(),
-            config=config,
-            optimizer_state_dict=optimizer.state_dict()
-            if optimizer is not None else None,
-            lr_schedule_state_dict=lr_schedule.state_dict()
-            if lr_schedule is not None else None,
-            present_epoch=epoch,
-            base_epoch=global_epoch,
-            prefix="personalized")
-
-        eval_outputs = self.perform_evaluation_op(data_loader, defined_model)
-
-        # save the personaliation accuracy to the results dir
-        self.checkpoint_personalized_accuracy(
-            accuracy=eval_outputs["accuracy"],
-            current_round=current_round,
-            epoch=epoch,
-            run_id=None)
-
-        return eval_outputs, save_checkpoint_filename
 
     def on_end_pers_train_epoch(
         self,
@@ -555,7 +476,7 @@ class Trainer(basic.Trainer):
         if (epoch - 1) % epoch_log_interval == 0 or epoch == pers_epochs:
             logging.info(
                 "[Client #%d] Personalization Training Epoch: [%d/%d]\tLoss: %.6f",
-                self.client_id, epoch, pers_epochs, epoch_loss_meter.avg)
+                self.client_id, epoch, pers_epochs, epoch_loss_meter.average)
 
             eval_outputs = self.perform_evaluation_op(data_loader,
                                                       defined_model)
@@ -608,7 +529,10 @@ class Trainer(basic.Trainer):
                               disable=True)
 
         for _, (examples, labels) in enumerate(local_progress):
-            examples, labels = examples.to(self.device), labels.to(self.device)
+            examples, labels = self.train_step_start(config,
+                                                     batch_samples=examples,
+                                                     batch_labels=labels)
+
             # Clear the previous gradient
             pers_optimizer.zero_grad()
 
@@ -621,12 +545,12 @@ class Trainer(basic.Trainer):
             pers_optimizer.step()
 
             # Update the epoch loss container
-            epoch_loss_meter.update(loss.data.item(), labels.size(0))
+            epoch_loss_meter.update(loss, labels.size(0))
 
             local_progress.set_postfix({
                 'lr': lr_schedule,
                 "loss": epoch_loss_meter.val,
-                'loss_avg': epoch_loss_meter.avg
+                'loss_avg': epoch_loss_meter.average
             })
 
         return epoch_loss_meter
@@ -643,102 +567,80 @@ class Trainer(basic.Trainer):
         """
         # Customize the config
         config = self.customize_train_config(config)
-
-        current_round = kwargs['current_round']
+        print("current_round: ", self.current_round)
+        pers_epochs = config['pers_epochs']
         personalized_model_name = config['personalized_model_name']
-        config['current_round'] = current_round
+        config['current_round'] = self.current_round
+        batch_size = config['pers_batch_size']
 
         # Initialize accuracy to be returned to -1, so that the client can disconnect
         # from the server when testing fails
         accuracy = -1
 
-        try:
-            assert "testset" in kwargs and "testset_sampler" in kwargs
-            testset = kwargs['testset']
-            testset_sampler = kwargs['testset_sampler']
-            test_loader = torch.utils.data.DataLoader(
-                testset,
-                batch_size=config['pers_batch_size'],
-                shuffle=False,
-                sampler=testset_sampler.get())
+        assert "testset" in kwargs and "testset_sampler" in kwargs
+        testset = kwargs['testset']
+        testset_sampler = kwargs['testset_sampler']
+        test_loader = torch.utils.data.DataLoader(
+            testset,
+            batch_size=batch_size,
+            shuffle=False,
+            sampler=testset_sampler.get())
 
-            pers_train_loader = torch.utils.data.DataLoader(
-                trainset,
-                batch_size=config['pers_batch_size'],
-                shuffle=False,
-                sampler=sampler.get())
+        self.train_loader = Trainer.get_train_loader(batch_size, trainset,
+                                                     sampler)
 
-            # Perform the personalization
-            #   i.e., the client's personal local dataset
-            pers_optimizer = optimizers.get(self.personalized_model,
+        # Initializing the optimizer, lr_schedule, and loss criterion
+        pers_optimizer = self.get_optimizer(self.personalized_model,
                                             stage_prefix="pers")
-            iterations_per_epoch = len(pers_train_loader)
+        pers_lr_scheduler = self.get_lr_scheduler(config,
+                                                  pers_optimizer,
+                                                  stage_prefix="pers")
+        _pers_loss_criterion = self.get_loss_criterion(stage_prefix="pers")
 
-            # Initializing the learning rate schedule, if necessary
-            lr_schedule = lr_schedulers.get(
-                optimizer=pers_optimizer,
-                iterations_per_epoch=iterations_per_epoch,
-                stage_prefix="pers")
+        self.pers_train_run_start(config,
+                                  model_name=personalized_model_name,
+                                  optimizer=pers_optimizer,
+                                  lr_schedule=pers_lr_scheduler,
+                                  data_loader=test_loader)
 
-            # # Initializing the loss criterion
-            _pers_loss_criterion = self.get_loss_criterion(stage_prefix="pers")
+        self.personalized_model.to(self.device)
 
-            self.personalized_model.to(self.device)
+        # epoch loss tracker
+        epoch_loss_meter = tracking.AverageMeter(name='Loss')
 
-            # Define the training and logging information
-            # default not to perform any logging
-            pers_epochs = config['pers_epochs']
+        # Start personalization training
+        # Note:
+        #   To distanguish the eval training stage with the
+        # previous ssl's training stage. We utilize the progress bar
+        # to demonstrate the training progress details.
+        show_str = f"[Client #{self.client_id}] Personalization"
+        global_progress = tqdm(range(1, pers_epochs + 1), desc=show_str)
 
-            # epoch loss tracker
-            epoch_loss_meter = tracking.AverageMeter(name='Loss')
+        for epoch in global_progress:
+            self.pers_train_epoch_start(config)
 
-            # Start personalization training
-            # Note:
-            #   To distanguish the eval training stage with the
-            # previous ssl's training stage. We utilize the progress bar
-            # to demonstrate the training progress details.
-            global_progress = tqdm(range(1, pers_epochs + 1),
-                                   desc='Personalization')
-            self.on_start_pers_train(
+            epoch_loss_meter = self.pers_train_one_epoch(
+                config=config,
+                epoch=epoch,
+                defined_model=self.personalized_model,
+                pers_optimizer=pers_optimizer,
+                lr_schedule=pers_lr_scheduler,
+                pers_loss_criterion=_pers_loss_criterion,
+                pers_train_loader=self.train_loader,
+                epoch_loss_meter=epoch_loss_meter)
+
+            pers_lr_scheduler.step()
+
+            eval_outputs = self.on_end_pers_train_epoch(
                 defined_model=self.personalized_model,
                 model_name=personalized_model_name,
                 data_loader=test_loader,
-                epoch=0,
-                global_epoch=0,
+                epoch=epoch,
+                global_epoch=epoch,
                 config=config,
                 optimizer=pers_optimizer,
-                lr_schedule=lr_schedule,
-            )
-
-            for epoch in global_progress:
-
-                epoch_loss_meter = self.pers_train_one_epoch(
-                    config=config,
-                    epoch=epoch,
-                    defined_model=self.personalized_model,
-                    pers_optimizer=pers_optimizer,
-                    lr_schedule=lr_schedule,
-                    pers_loss_criterion=_pers_loss_criterion,
-                    pers_train_loader=pers_train_loader,
-                    epoch_loss_meter=epoch_loss_meter)
-
-                lr_schedule.step()
-
-                eval_outputs = self.on_end_pers_train_epoch(
-                    defined_model=self.personalized_model,
-                    model_name=personalized_model_name,
-                    data_loader=test_loader,
-                    epoch=epoch,
-                    global_epoch=epoch,
-                    config=config,
-                    optimizer=pers_optimizer,
-                    lr_schedule=lr_schedule,
-                    epoch_loss_meter=epoch_loss_meter)
-
-        except Exception as testing_exception:
-            logging.info("Personalization Learning on client #%d failed.",
-                         self.client_id)
-            raise testing_exception
+                lr_schedule=pers_lr_scheduler,
+                epoch_loss_meter=epoch_loss_meter)
 
         # get the accuracy of the client
         accuracy = eval_outputs["accuracy"]
@@ -747,7 +649,7 @@ class Trainer(basic.Trainer):
         # to the model dir of this client
         if 'max_concurrency' in config:
 
-            current_round = kwargs['current_round']
+            current_round = self.current_round
             if current_round == config['rounds']:
                 target_dir = Config().params['model_path']
             else:
@@ -790,7 +692,7 @@ class Trainer(basic.Trainer):
         """
 
         try:
-            self.pers_train_model(config, trainset, sampler, **kwargs)
+            self.pers_train_model(config, trainset, sampler.get(), **kwargs)
         except Exception as training_exception:
             logging.info("Personalization Training on client #%d failed.",
                          self.client_id)
@@ -865,3 +767,47 @@ class Trainer(basic.Trainer):
         # this can also be regarded as a demo of how to change the trainer's config.
         config['do_detailed_pers_checkpoint'] = False
         return config
+
+    def pers_train_run_start(self, config, **kwargs):
+        """Method called at the start of training run.
+
+            By default, we initial personalized model and its performance is recorded.
+        """
+        current_round = self.current_round
+        model_name = config['model_name']
+        optimizer = kwargs['optimizer']
+        lr_schedule = kwargs['lr_schedule']
+        data_loader = kwargs['data_loader']
+        save_checkpoint_filename = perform_client_checkpoint_saving(
+            client_id=self.client_id,
+            model_name=model_name,
+            model_state_dict=self.personalized_model.state_dict(),
+            config=config,
+            optimizer_state_dict=optimizer.state_dict()
+            if optimizer is not None else None,
+            lr_schedule_state_dict=lr_schedule.state_dict()
+            if lr_schedule is not None else None,
+            present_epoch=self.current_epoch,
+            base_epoch=self.current_epoch,
+            prefix="personalized")
+
+        eval_outputs = self.perform_evaluation_op(
+            data_loader, defined_model=self.personalized_model)
+
+        # save the personaliation accuracy to the results dir
+        self.checkpoint_personalized_accuracy(
+            accuracy=eval_outputs["accuracy"],
+            current_round=current_round,
+            epoch=self.current_epoch,
+            run_id=None)
+
+        return eval_outputs, save_checkpoint_filename
+
+    def pers_train_run_end(self, config):
+        """Method called at the end of a training run."""
+
+    def pers_train_epoch_start(self, config):
+        """Method called at the beginning of a personalized training epoch."""
+
+    def pers_train_epoch_end(self, config):
+        """Method called at the end of a personalized training epoch."""
