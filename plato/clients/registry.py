@@ -5,26 +5,24 @@ Having a registry of all available classes is convenient for retrieving an insta
 on a configuration at run-time.
 """
 import logging
-from collections import OrderedDict
 
+from plato.config import Config
 from plato.clients import (
     simple,
     mistnet,
     simple_he,
 )
 
-from plato.config import Config
-
-registered_clients = OrderedDict([
-    ('simple', simple.Client),
-    ('mistnet', mistnet.Client),
-    ('simple_he', simple_he.Client),
-])
+registered_clients = {
+    "simple": simple.Client,
+    "mistnet": mistnet.Client,
+    'simple_he': simple_he.Client,
+}
 
 
 def get(model=None, datasource=None, algorithm=None, trainer=None):
     """Get an instance of the server."""
-    if hasattr(Config().clients, 'type'):
+    if hasattr(Config().clients, "type"):
         client_type = Config().clients.type
     else:
         client_type = Config().algorithm.type
@@ -32,11 +30,9 @@ def get(model=None, datasource=None, algorithm=None, trainer=None):
     if client_type in registered_clients:
         logging.info("Client: %s", client_type)
         registered_client = registered_clients[client_type](
-            model=model,
-            datasource=datasource,
-            algorithm=algorithm,
-            trainer=trainer)
+            model=model, datasource=datasource, algorithm=algorithm, trainer=trainer
+        )
     else:
-        raise ValueError('No such client: {}'.format(client_type))
+        raise ValueError("No such client: {}".format(client_type))
 
     return registered_client
