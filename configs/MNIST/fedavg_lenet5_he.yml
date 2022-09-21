@@ -3,10 +3,14 @@ clients:
     type: simple_he
 
     # The total number of clients
-    total_clients: 10
+    total_clients: 5
+
+    # encrypt ratio
+    encrypt_ratio: 0.05
+    random_mask: True
 
     # The number of clients selected in each round
-    per_round: 5
+    per_round: 2
 
     # Should the clients compute test accuracy locally?
     do_test: false
@@ -52,10 +56,20 @@ trainer:
     epochs: 1
     batch_size: 32
     optimizer: SGD
-    learning_rate: 0.01
-    momentum: 0.9
-    weight_decay: 0.0
 
 algorithm:
     # Aggregation algorithm
     type: fedavg
+
+results:
+    # Write the following parameter(s) into a CSV
+    types: round, elapsed_time, accuracy, comm_overhead
+
+parameters:
+    model:
+        num_classes: 10
+        
+    optimizer:
+        lr: 0.01
+        momentum: 0.9
+        weight_decay: 0.0
