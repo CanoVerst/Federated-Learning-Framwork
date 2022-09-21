@@ -1,12 +1,8 @@
 """
-A simple federated learning server using federated averaging.
+A simple federated learning server using federated averaging with homomorphic encryption support.
 """
-
-import asyncio
-import logging
 import os
 import pickle
-import time
 from typing import OrderedDict
 import torch
 from plato.config import Config
@@ -16,8 +12,7 @@ from plato.utils import homo_enc
 
 
 class Server(fedavg.Server):
-    """Federated learning server using federated averaging."""
-
+    """Federated learning server using federated averaging with homomorphic encryption support."""
     def __init__(self, model=None, algorithm=None, trainer=None):
         super().__init__(model=model, algorithm=algorithm, trainer=trainer)
         self.encrypted_model = None
@@ -96,8 +91,6 @@ class Server(fedavg.Server):
             self.final_mask = self.final_mask.int().long()
 
     def aggregate_he(self, updates):
-        """Aggregate the reported weight updates from the selected clients."""
-
         self.encrypted_model = self.federated_averaging_he(updates)
 
         # Decrypt model weights for test accuracy

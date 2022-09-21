@@ -12,12 +12,14 @@ import random
 from typing import OrderedDict
 
 def get_ckks_context():
+    """Obtain a Tenseal context for encryption and decryption."""
     context_dir = ".ckks_context/"
     context_name = "context"
     try:
         with open(os.path.join(context_dir, context_name), "rb") as f:
             return ts.context_from(f.read())
     except:
+        # Create a new context if not exists
         if not os.path.exists(context_dir):
             os.mkdir(context_dir)
         

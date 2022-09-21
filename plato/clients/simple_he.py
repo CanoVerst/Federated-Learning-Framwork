@@ -4,23 +4,14 @@ A basic federated learning client with homomorphic encryption support
 
 import logging
 import random
-import time
 import sys
 import torch
-import numpy as np
 import pickle
-from dataclasses import dataclass
-from typing import overload
 
-from plato.algorithms import registry as algorithms_registry
 from plato.clients import simple
 from plato.config import Config
-from plato.datasources import registry as datasources_registry
-from plato.processors import registry as processor_registry
 from plato.processors.model_encrypt import Processor as encrpt_processor
-from plato.samplers import registry as samplers_registry
-from plato.trainers import registry as trainers_registry
-from plato.utils import fonts, homo_enc
+from plato.utils import homo_enc
 
 class Client(simple.Client):
     """A basic federated learning client who sends simple weight updates."""
@@ -66,8 +57,6 @@ class Client(simple.Client):
                                                     in enumerate(gradients)]
         grad_flat = torch.cat(gradient_list) 
 
-        
-        
         delta = exposed_flat - latest_flat
         product = delta * grad_flat
         
