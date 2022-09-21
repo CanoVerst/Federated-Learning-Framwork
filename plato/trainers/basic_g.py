@@ -22,6 +22,33 @@ class Trainer(basic.Trainer):
         super().__init__(model = model)
         self.gradient = OrderedDict()
 
+    # Override API functions
+    def train_run_end(self, config):
+        logging.info("[Client #%d] Training completed, computing gradient.", self.client_id)
+        # Set the existing gradients to zeros
+        [x.grad.zero_() for x in list(self.model.parameters())]
+        self.model.to(self.device)
+        for idx,(examples, labels) in enumerate(self.train_loader):
+            examples, labels = examples.to(self.device), labels.to(self.device)
+            outputs = self.model(examples)
+            loss_criterion = torch.nn.CrossEntropyLoss()
+            loss = loss_criterion(outputs, labels) 
+            loss = loss * (len(labels) / len(self.sampler))  
+            loss.backward()
+
+        param_dict = dict(list(self.model.named_parameters()))
+        state_dict = self.model.state_dict()
+        for name in state_dict.keys():
+            if name in param_dict:
+                self.gradient[name] = param_dict[name].grad
+            else:
+                self.gradient[name] = torch.zeros(state_dict[name].shape)
+
+        model_type = config['model_name']
+        filename = f"{model_type}_gradient_{self.client_id}_{config['run_id']}.pth"
+        self.save_gradient(filename)
+
+    # Self-defined functions
     def save_gradient(self, filename=None, location=None):
         """Saving the model to a file."""
         model_path = Config(
@@ -54,36 +81,36 @@ class Trainer(basic.Trainer):
 
         self.gradient = torch.load(model_path)
 
-    def train_model(self, config, trainset, sampler, cut_layer=None):
-        '''Compute gradients after training'''
-        self.train_loop(config, trainset, sampler, cut_layer)
+    # def train_model(self, config, trainset, sampler, cut_layer=None):
+    #     '''Compute gradients after training'''
+    #     super().train_model(config, trainset, sampler)
 
-        train_loader = torch.utils.data.DataLoader(dataset=trainset,
-                                                       shuffle=False,
-                                                       batch_size=Config().trainer.batch_size,
-                                                       sampler=sampler)
-        # Set the existing gradients to zeros
-        [x.grad.zero_() for x in list(self.model.parameters())]
-        self.model.to(self.device)
-        for idx,(examples, labels) in enumerate(train_loader):
-            examples, labels = examples.to(self.device), labels.to(self.device)
-            outputs = self.model(examples)
-            loss_criterion = torch.nn.CrossEntropyLoss()
-            loss = loss_criterion(outputs, labels) 
-            loss = loss * (len(labels) / len(sampler))  
-            loss.backward()
+    #     train_loader = torch.utils.data.DataLoader(dataset=trainset,
+    #                                                    shuffle=False,
+    #                                                    batch_size=Config().trainer.batch_size,
+    #                                                    sampler=sampler)
+    #     # Set the existing gradients to zeros
+    #     [x.grad.zero_() for x in list(self.model.parameters())]
+    #     self.model.to(self.device)
+    #     for idx,(examples, labels) in enumerate(train_loader):
+    #         examples, labels = examples.to(self.device), labels.to(self.device)
+    #         outputs = self.model(examples)
+    #         loss_criterion = torch.nn.CrossEntropyLoss()
+    #         loss = loss_criterion(outputs, labels) 
+    #         loss = loss * (len(labels) / len(sampler))  
+    #         loss.backward()
 
-        param_dict = dict(list(self.model.named_parameters()))
-        state_dict = self.model.state_dict()
-        for name in state_dict.keys():
-            if name in param_dict:
-                self.gradient[name] = param_dict[name].grad
-            else:
-                self.gradient[name] = torch.zeros(state_dict[name].shape)
+    #     param_dict = dict(list(self.model.named_parameters()))
+    #     state_dict = self.model.state_dict()
+    #     for name in state_dict.keys():
+    #         if name in param_dict:
+    #             self.gradient[name] = param_dict[name].grad
+    #         else:
+    #             self.gradient[name] = torch.zeros(state_dict[name].shape)
 
-        model_type = config['model_name']
-        filename = f"{model_type}_gradient_{self.client_id}_{config['run_id']}.pth"
-        self.save_gradient(filename)
+    #     model_type = config['model_name']
+    #     filename = f"{model_type}_gradient_{self.client_id}_{config['run_id']}.pth"
+    #     self.save_gradient(filename)
 
 
     def load_model(self, filename=None, location=None):
